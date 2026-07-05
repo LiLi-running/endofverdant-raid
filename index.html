@@ -1229,31 +1229,28 @@
     const BOARD_SIZE = 10;
     let characters = [];
     let selectedCharacterId = null;
-    let foreshadowingAction = null;
     let userId = null;
-    let gameId = null; 
+    let gameId = null;
     let unsubscribeChars = null;
     let unsubscribeSettings = null;
     let unsubscribeLogs = null;
     let unsubscribeCombatEvents = null;
 const combatTextStartTime = new Date();
-    let previousTurnCharId = null; 
-    let isBoardInitialized = false; 
-    let selectedSkill = null; 
-    let currentTurnIndex = 0;
-    let turnPhase = 'MOVE';
-    let isProcessingTurn = false;
-    let preMovePosition = null; 
+    let previousTurnCharId = null;
+    let isBoardInitialized = false;
+    let selectedSkill = null;
+    let preMovePosition = null;
     let gameState = 'PREPARATION';
-    let roundPhase = 'PLAYER_PHASE'; 
-    let adminSelectedEnemyId = null;
     let selectedCharActionPhase = 'MOVE';
     let currentlyActingEnemyId = null;
-    let actingEnemyId = null; 
-    let adminForeshadowSkillId = null; 
-    let previewCharacterId = null; 
+    let actingEnemyId = null;
+    let previewCharacterId = null;
     let round = 1;
     let maxRounds = 0;
+    // 속도 기반 이니셔티브 턴 시스템
+    let currentTurnCharId = null; // 현재 행동 중인 캐릭터 (동속도 타이 상태면 null)
+    let turnQueue = []; // 이번 라운드의 속도순 캐릭터 id 배열 (라운드 시작 시 고정)
+    let activeExtraUsed = false; // 현재 행동 캐릭터가 이번 턴 추가행동을 이미 사용했는지
     
     let loggedInCharId = null; 
     let isAdmin = false;       
@@ -1269,6 +1266,7 @@ const combatTextStartTime = new Date();
     cursed: { id: 'cursed', name: '저주' },
     corrosion: { id: 'corrosion', name: '잠식 반동' },
     defBuff: { id: 'defBuff', name: '방어 버프' },
+    taunted: { id: 'taunted', name: '도발' },
 };
 
     const STATUS_EFFECT_ICONS = {
@@ -1281,6 +1279,7 @@ const combatTextStartTime = new Date();
     cursed: '🪄',
     corrosion: '🌑',
     defBuff: '🛡️',
+    taunted: '🎯',
 };
     
     // NEW: Map/Board State Variables
@@ -1435,10 +1434,11 @@ const loginStatusModal = document.getElementById('login-status-modal');
     
     // --- Data Seeding ---
     async function seedInitialSettings(gameId) { 
-        await setDoc(doc(db, 'games', gameId), { 
-            skills: DEFAULT_SKILLS, 
-            currentTurnIndex: 0, 
-            currentTurnCharId: null, 
+        await setDoc(doc(db, 'games', gameId), {
+            skills: DEFAULT_SKILLS,
+            currentTurnCharId: null,
+            turnQueue: [],
+            activeExtraUsed: false,
             adminPassword: window.ADMIN_PASSWORD || "0000",
             gameState: 'PREPARATION', 
             round: 1, 
@@ -1495,11 +1495,10 @@ const loginStatusModal = document.getElementById('login-status-modal');
         if (docSnap.exists()) {
             const data = docSnap.data();
             const oldGameState = gameState; // [수정] 이전 gameState를 기억합니다.
-            const oldRoundPhase = roundPhase;
+            const oldRound = round;
 
             SKILLS = data.skills || {};
             gameState = data.gameState || 'PREPARATION';
-            roundPhase = data.roundPhase || 'PLAYER_PHASE';
 
             if (oldGameState === 'STARTED' && gameState === 'ENDED' && data.gameResult) {
                 showGameSummaryModal(data.gameResult.title, data.gameResult.message);
@@ -1511,149 +1510,39 @@ const loginStatusModal = document.getElementById('login-status-modal');
             round = data.round || 1;
             maxRounds = data.maxRounds || 0;
             isAdminMoveAllowed = data.isAdminMoveAllowed !== undefined ? data.isAdminMoveAllowed : true;
-            
-            foreshadowingAction = data.foreshadowingAction || null;
-            
+
+            turnQueue = data.turnQueue || [];
+            activeExtraUsed = data.activeExtraUsed || false;
+
             boardBackgroundImage = data.boardBackgroundImage || '';
             pageBackgroundImage = data.pageBackgroundImage || '';
             document.body.style.setProperty('--page-background-image', pageBackgroundImage ? `url('${pageBackgroundImage}')` : 'none');
 
-            const turnCharId = data.currentTurnCharId;
+            const turnCharId = data.currentTurnCharId || null;
+            currentTurnCharId = turnCharId;
             actingEnemyId = data.actingEnemyId || null;
 
-            if (gameState === 'STARTED' && oldRoundPhase !== roundPhase) {
+            if (gameState === 'STARTED' && data.round !== oldRound) {
                 selectedCharacterId = null;
                 previewCharacterId = null;
                 selectedSkill = null;
-                adminSelectedEnemyId = null;
-
-                switch (roundPhase) {
-                    case 'ENEMY_FORESHADOW':
-                        showBannerAnnouncement(`Round ${round}`, "적 행동 예고");
-                        if (isAdmin) {
-                            determineEnemyNextActions();
-                        }
-                        break;
-                    
-                    case 'PLAYER_PHASE': {
-                        showBannerAnnouncement(`Round ${round}`, "아군 턴 시작");
-                        if (isAdmin) {
-                            const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-                            if (livingPCs.length > 0) {
-                                const batch = writeBatch(db);
-                                for (const pc of livingPCs) {
-                                    const charRef = doc(db, 'games', gameId, 'characters', pc.id);
-                                    let updates = {};
-                                    // Mental HP regen 10 per round
-                                    const newMentalHp = Math.min(pc.maxMentalHp, pc.mentalHp + 10);
-                                    if (newMentalHp > pc.mentalHp) { updates.mentalHp = newMentalHp; updates.mp = newMentalHp; }
-                                    // Auto-revival: if bodyHp <= 0 and mentalHp > maxMentalHp/10
-                                    if (pc.bodyHp <= 0 && pc.mentalHp > pc.maxMentalHp / 10) {
-                                        const reviveMentalCost = Math.floor(pc.maxMentalHp / 10);
-                                        const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
-                                        updates.bodyHp = pc.maxBodyHp; updates.hp = pc.maxBodyHp;
-                                        updates.mentalHp = reviveMental; updates.mp = reviveMental;
-                                        logAction(`💚 ${pc.name}이(가) 자동 부활했습니다! (신체 완전 회복, 정신 -${reviveMentalCost})`, "heal");
-                                    }
-                                    // Tile damage
-                                    const tileKey = `${pc.x},${pc.y}`;
-                                    const tile = boardTiles[tileKey];
-                                    if (tile && tile.type === 'damage') {
-                                        const damage = DAMAGE_TILE_DAMAGE;
-                                        const curBodyHp = updates.bodyHp !== undefined ? updates.bodyHp : pc.bodyHp;
-                                        updates.bodyHp = Math.max(0, curBodyHp - damage);
-                                        updates.hp = updates.bodyHp;
-                                        logAction(`🩸 ${pc.name}이(가) 대미지 칸에 서있어 **${damage} 피해**를 입었습니다!`, "damage");
-                                    }
-                                    const effects = pc.statusEffects || [];
-                                    if (effects.length > 0) {
-                                        const isStunned = effects.some(effect => effect.id === 'stunned');
-                                        if (isStunned) { logAction(`💫 ${pc.name}은(는) [기절] 상태이므로 턴이 자동으로 넘어갑니다.`, "system"); updates.hasActedThisRound = true; }
-                                        let finalBodyHp = updates.bodyHp !== undefined ? updates.bodyHp : pc.bodyHp;
-                                        let hpChanged = false;
-                                        effects.forEach(effect => {
-                                            if (effect.effectType === 'heal') {
-                                                const healAmount = effect.value || 15;
-                                                finalBodyHp = Math.min(pc.maxBodyHp, finalBodyHp + healAmount);
-                                                hpChanged = true;
-                                                logAction(`🌿 ${pc.name}이(가) [${effect.name}] 효과로 **${healAmount} 신체 회복!**`, "heal");
-                                            } else if (effect.effectType === 'damage') {
-                                                const damageAmount = effect.value || 10;
-                                                finalBodyHp = Math.max(0, finalBodyHp - damageAmount);
-                                                hpChanged = true;
-                                                logAction(`☠️ ${pc.name}이(가) [${effect.name}] 효과로 **${damageAmount} 피해**를 입었습니다!`, "damage");
-                                            }
-                                        });
-                                        if (hpChanged) { updates.bodyHp = finalBodyHp; updates.hp = finalBodyHp; }
-                                    }
-                                    if (Object.keys(updates).length > 0) { batch.update(charRef, updates); }
-                                }
-                                await batch.commit();
-                                await logAction(`💙 라운드 시작: 모든 아군 정신 내구도 10 회복.`, "system");
-                            }
-                        }
-                        break;
-                    }
-
-                    case 'ENEMY_EXECUTION': {
-                        showBannerAnnouncement(`Round ${round}`, "적군 턴 시작");
-                        if (isAdmin) {
-                            const livingEnemies = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.x !== null);
-                            if (livingEnemies.length > 0) {
-                                const batch = writeBatch(db);
-                                for (const enemy of livingEnemies) {
-                                    const charRef = doc(db, 'games', gameId, 'characters', enemy.id);
-                                    let updates = {};
-                                    const tileKey = `${enemy.x},${enemy.y}`;
-                                    const tile = boardTiles[tileKey];
-                                    if (tile && tile.type === 'damage') {
-                                        const damage = DAMAGE_TILE_DAMAGE;
-                                        updates.bodyHp = Math.max(0, enemy.bodyHp - damage);
-                                        updates.hp = updates.bodyHp;
-                                        logAction(`🩸 ${enemy.name}이(가) 대미지 칸에 서있어 **${damage} 피해**를 입었습니다!`, "damage");
-                                    }
-                                    const effects = enemy.statusEffects || [];
-                                    if (effects.length > 0) {
-                                        let finalBodyHp = updates.bodyHp !== undefined ? updates.bodyHp : enemy.bodyHp;
-                                        let hpChanged = false;
-                                        effects.forEach(effect => {
-                                            if (effect.effectType === 'heal') {
-                                                const healAmount = effect.value || 15;
-                                                finalBodyHp = Math.min(enemy.maxBodyHp, finalBodyHp + healAmount);
-                                                hpChanged = true;
-                                                logAction(`🌿 ${enemy.name}이(가) [${effect.name}] 효과로 **${healAmount} 회복!**`, "heal");
-                                            } else if (effect.effectType === 'damage') {
-                                                const damageAmount = effect.value || 10;
-                                                finalBodyHp = Math.max(0, finalBodyHp - damageAmount);
-                                                hpChanged = true;
-                                                logAction(`☠️ ${enemy.name}이(가) [${effect.name}] 효과로 **${damageAmount} 피해**를 입었습니다!`, "damage");
-                                            }
-                                        });
-                                        if (hpChanged) { updates.bodyHp = finalBodyHp; updates.hp = finalBodyHp; }
-                                    }
-                                    if (Object.keys(updates).length > 0) { batch.update(charRef, updates); }
-                                }
-                                await batch.commit();
-                            }
-                        }
-                        break;
-                    }
-                }
+                showBannerAnnouncement(`Round ${round}`, "라운드 시작");
             }
-            
+
             const currentTurnChar = characters.find(c => c.id === turnCharId);
-            if (gameState === 'STARTED' && currentTurnChar && currentTurnChar.bodyHp <= 0 && isAdmin) {
-                setTimeout(() => advanceRoundPhase(), 1000);
+
+            // 현재 차례인 캐릭터가 (반격 등으로) 이미 쓰러졌다면 자동으로 다음 차례로 넘깁니다.
+            if (gameState === 'STARTED' && currentTurnChar && currentTurnChar.bodyHp <= 0 && !currentTurnChar.hasActedThisRound) {
+                setTimeout(() => completeActorTurn(currentTurnChar.id, false), 500);
             }
-            
+
+            // 새로 활성화된 캐릭터가 적이면, 관리자 클라이언트가 예고 없이 자동으로 AI 행동을 실행합니다.
             if (turnCharId && turnCharId !== previousTurnCharId) {
-                if (currentTurnChar && currentTurnChar.isAuto) {
-                    setTimeout(() => runAutoTurn(currentTurnChar), 1000);
+                if (isAdmin && currentTurnChar && currentTurnChar.type === 'ENEMY' && currentTurnChar.bodyHp > 0) {
+                    setTimeout(() => runEnemyAutoTurn(currentTurnChar), 600);
                 }
             }
             previousTurnCharId = turnCharId;
-            currentTurnIndex = characters.findIndex(c => c.id === turnCharId);
-            if (currentTurnIndex === -1) currentTurnIndex = 0;
             if (!adminModal.classList.contains('hidden')) openAdminModal();
 
             onSnapshot(doc(db, 'games', gameId, 'board', 'tiles'), (tileDoc) => {
@@ -1732,315 +1621,357 @@ function listenForCombatTextEvents(gameId) {
 }
        const delay = ms => new Promise(res => setTimeout(res, ms));
     async function logAction(message, type = "system") { if (gameId) await addDoc(collection(db, "games", gameId, "logs"), { message, type, timestamp: serverTimestamp() }); }
-    async function advanceRoundPhase() {
-    if (roundPhase === 'PLAYER_PHASE') {
-        await setDoc(doc(db, 'games', gameId), { roundPhase: 'ENEMY_EXECUTION' }, { merge: true });
-    } 
-    else if (roundPhase === 'ENEMY_EXECUTION') {
-        currentlyActingEnemyId = null; 
+    // ============ 속도 기반 이니셔티브 턴 시스템 ============
+    // 이전 라운드에 부여된 버프/디버프/패널티(상태이상의 speedMod)를 반영한 현재 속도
+    function getEffectiveSpeed(char) {
+        const base = char.speed ?? 5;
+        const mods = (char.statusEffects || []).reduce((sum, e) => sum + (e.speedMod || 0), 0);
+        return base + mods;
+    }
 
-        const endOfRoundBatch = writeBatch(db);
+    // 아직 행동하지 않은, 살아서 배치된 캐릭터 중 "현재 가장 빠른 속도" 그룹을 반환합니다.
+    // 길이가 1이면 그 캐릭터가 바로 행동하고, 2 이상이면 동속도이므로 직접 골라야 합니다.
+    function getEligibleActorIds() {
+        const remaining = turnQueue
+            .map(id => characters.find(c => c.id === id))
+            .filter(c => c && c.bodyHp > 0 && c.x !== null && !c.hasActedThisRound);
+        if (remaining.length === 0) return [];
+        const maxSpeed = Math.max(...remaining.map(c => getEffectiveSpeed(c)));
+        return remaining.filter(c => Math.abs(getEffectiveSpeed(c) - maxSpeed) < 1e-9).map(c => c.id);
+    }
+
+    async function setActiveChar(charId) {
+        if (!gameId) return;
+        currentTurnCharId = charId;
+        activeExtraUsed = false;
+        await setDoc(doc(db, 'games', gameId), { currentTurnCharId: charId, activeExtraUsed: false }, { merge: true });
+        render();
+    }
+
+    // 동속도 캐릭터 중 하나를 직접 골라 턴을 열어줄 때 사용합니다 (관리자 또는 해당 캐릭터의 소유자).
+    window.pickActiveChar = async (charId) => {
+        const eligible = getEligibleActorIds();
+        if (!eligible.includes(charId)) return;
+        await setActiveChar(charId);
+    };
+
+    // 다음으로 행동할 캐릭터(들)를 결정합니다. 행동 가능한 캐릭터가 없으면 라운드를 종료합니다.
+    async function advanceTurn() {
+        if (gameState !== 'STARTED') return;
+        const eligible = getEligibleActorIds();
+        if (eligible.length === 0) {
+            await endRound();
+            return;
+        }
+        if (eligible.length === 1) {
+            await setActiveChar(eligible[0]);
+        } else {
+            currentTurnCharId = null;
+            activeExtraUsed = false;
+            await setDoc(doc(db, 'games', gameId), { currentTurnCharId: null, activeExtraUsed: false }, { merge: true });
+            render();
+        }
+    }
+
+    // 캐릭터가 이번 턴(추가행동 포함)을 모두 마쳤을 때 호출합니다.
+    // 명중 판정 성공으로 얻은 추가행동을 아직 쓰지 않았다면, 같은 캐릭터가 한 번 더 행동합니다 (1회 한정).
+    async function completeActorTurn(charId, bonusEarned) {
+        if (gameState !== 'STARTED') return;
+        if (bonusEarned && !activeExtraUsed) {
+            activeExtraUsed = true;
+            await setDoc(doc(db, 'games', gameId), { activeExtraUsed: true }, { merge: true });
+            const char = characters.find(c => c.id === charId);
+            selectedCharActionPhase = 'MOVE';
+            selectedSkill = 'move';
+            preMovePosition = char ? { x: char.x, y: char.y } : null;
+            render();
+            return;
+        }
+        const char = characters.find(c => c.id === charId);
+        if (char) char.hasActedThisRound = true; // 스냅샷 도착 전 즉시 반영(경합 방지)
+        await updateDoc(doc(db, 'games', gameId, 'characters', charId), { hasActedThisRound: true });
+        selectedCharacterId = null;
+        selectedSkill = null;
+        await advanceTurn();
+    }
+
+    // 라운드 시작: 이전 라운드의 상태이상이 반영된 속도로 턴 순서를 새로 계산합니다.
+    async function startNewRound() {
+        if (gameState !== 'STARTED' || !gameId) return;
+        currentlyActingEnemyId = null;
+
+        // 아군 정신 내구도 회복 / 자동 부활 (기존 라운드 시작 처리 유지)
+        const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+        if (livingPCs.length > 0) {
+            const batch = writeBatch(db);
+            for (const pc of livingPCs) {
+                const charRef = doc(db, 'games', gameId, 'characters', pc.id);
+                let updates = {};
+                const newMentalHp = Math.min(pc.maxMentalHp, pc.mentalHp + 10);
+                if (newMentalHp > pc.mentalHp) { updates.mentalHp = newMentalHp; updates.mp = newMentalHp; pc.mentalHp = newMentalHp; pc.mp = newMentalHp; }
+                if (pc.bodyHp <= 0 && pc.mentalHp > pc.maxMentalHp / 10) {
+                    const reviveMentalCost = Math.floor(pc.maxMentalHp / 10);
+                    const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
+                    updates.bodyHp = pc.maxBodyHp; updates.hp = pc.maxBodyHp;
+                    updates.mentalHp = reviveMental; updates.mp = reviveMental;
+                    pc.bodyHp = pc.maxBodyHp; pc.hp = pc.maxBodyHp; pc.mentalHp = reviveMental; pc.mp = reviveMental;
+                    logAction(`💚 ${pc.name}이(가) 자동 부활했습니다! (신체 완전 회복, 정신 -${reviveMentalCost})`, "heal");
+                }
+                if (Object.keys(updates).length > 0) { batch.update(charRef, updates); }
+            }
+            await batch.commit();
+            await logAction(`💙 라운드 시작: 모든 아군 정신 내구도 10 회복.`, "system");
+        }
+
+        // 생존/배치된 모든 캐릭터의 행동 여부 초기화
+        const resetBatch = writeBatch(db);
+        const combatants = characters.filter(c => c.bodyHp > 0 && c.x !== null);
+        combatants.forEach(c => {
+            c.hasActedThisRound = false;
+            resetBatch.update(doc(db, 'games', gameId, 'characters', c.id), { hasActedThisRound: false });
+        });
+        await resetBatch.commit();
+
+        // 이전 라운드에서 부여된 버프/디버프/패널티를 반영해 이번 라운드 속도순 턴 순서를 계산합니다.
+        const newQueue = combatants
+            .map(c => ({ id: c.id, speed: getEffectiveSpeed(c) }))
+            .sort((a, b) => b.speed - a.speed)
+            .map(c => c.id);
+        turnQueue = newQueue;
+        currentTurnCharId = null;
+        activeExtraUsed = false;
+
+        showBannerAnnouncement(`Round ${round}`, "라운드 시작");
+        await setDoc(doc(db, 'games', gameId), { turnQueue: newQueue, currentTurnCharId: null, activeExtraUsed: false }, { merge: true });
+
+        await advanceTurn();
+    }
+
+    // 라운드 종료: 모든 생존 캐릭터에게 지속 피해/지속 회복과 대미지 칸 피해를 적용하고, 상태이상 지속시간을 감소시킵니다.
+    async function endRound() {
+        if (!gameId) return;
+        currentlyActingEnemyId = null;
+
         const livingCharacters = characters.filter(c => c.bodyHp > 0 && c.x !== null);
+        const batch = writeBatch(db);
 
         for (const char of livingCharacters) {
+            let finalBodyHp = char.bodyHp;
+            let hpChanged = false;
+
+            const tileKey = `${char.x},${char.y}`;
+            const tile = boardTiles[tileKey];
+            if (tile && tile.type === 'damage') {
+                finalBodyHp = Math.max(0, finalBodyHp - DAMAGE_TILE_DAMAGE);
+                hpChanged = true;
+                logAction(`🩸 ${char.name}이(가) 대미지 칸에 서있어 **${DAMAGE_TILE_DAMAGE} 피해**를 입었습니다!`, "damage");
+            }
+
             const effects = char.statusEffects || [];
-            if (effects.length > 0) {
-                const updatedEffects = effects.reduce((acc, effect) => {
-                    
-                 
-                    if (effect.isNew) {
-                        const { isNew, ...rest } = effect; 
-                        acc.push(rest);
-                    } else {
-                
-                        const newTurnsRemaining = effect.turnsRemaining - 1;
-                        if (newTurnsRemaining > 0) {
-                            acc.push({ ...effect, turnsRemaining: newTurnsRemaining });
-                        } else {
-                            logAction(`⏱️ ${char.name}의 [${effect.name}] 효과가 사라졌습니다.`, "system");
-                        }
-                    }
-                
-
-                    return acc;
-                }, []);
-                const charRef = doc(db, 'games', gameId, 'characters', char.id);
-                endOfRoundBatch.update(charRef, { statusEffects: updatedEffects });
-            }
-        }
-        await endOfRoundBatch.commit();
-        const newRound = round + 1;
-
-        showBannerAnnouncement(`Round ${newRound}`, "적 행동 예고");
-
-        // DB 상태 업데이트
-        await setDoc(doc(db, 'games', gameId), { 
-            round: newRound,
-            roundPhase: 'ENEMY_FORESHADOW' 
-        }, { merge: true });
-        
-        // 모든 PC의 행동 여부 초기화
-        const batch = writeBatch(db);
-        characters.filter(c => c.type === 'PC').forEach(pc => {
-            const charRef = doc(db, 'games', gameId, 'characters', pc.id);
-            batch.update(charRef, { hasActedThisRound: false });
-        });
-        await batch.commit();
-    }
-}
-
-async function determineEnemyNextActions() {
-    if (!gameId) return;
-
-    const livingEnemies = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.x !== null);
-    const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-
-    if (livingPCs.length === 0 && livingEnemies.length <= 1) {
-        console.log("행동할 대상이 없어 적 AI 설정을 건너뜁니다.");
-        return;
-    }
-
-    const batch = writeBatch(db);
-
-    livingEnemies.forEach(enemy => {
-        let decisionMade = false;
-
-        const healSkillId = enemy.skills.find(id => SKILLS[id]?.category === 'Heal');
-        
-        if (healSkillId) {
-            const healSkill = SKILLS[healSkillId];
-            const potentialHealTargets = livingEnemies.filter(ally =>
-                ally.id !== enemy.id && // 자기 자신은 제외
-                ally.bodyHp < ally.maxBodyHp * 0.7 && // 체력이 70% 미만
-                getDistance(enemy, ally) <= healSkill.range // 스킬 사거리 내에 있음
-            );
-
-            if (potentialHealTargets.length > 0) {
-                potentialHealTargets.sort((a, b) => (a.bodyHp / a.maxBodyHp) - (b.bodyHp / b.maxBodyHp));
-                const healTarget = potentialHealTargets[0];
-
-                const enemyRef = doc(db, 'games', gameId, 'characters', enemy.id);
-                batch.update(enemyRef, {
-                    nextAction: {
-                        targetId: healTarget.id,
-                        skillId: healSkillId
-                    }
-                });
-                decisionMade = true; 
-            }
-        }
-        if (!decisionMade && livingPCs.length > 0) {
-            let closestTarget = null;
-            let minDistance = Infinity;
-
-            livingPCs.forEach(pc => {
-                const distance = getDistance(enemy, pc);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestTarget = pc;
+            effects.forEach(effect => {
+                if (effect.effectType === 'heal') {
+                    const healAmount = effect.value || 15;
+                    finalBodyHp = Math.min(char.maxBodyHp, finalBodyHp + healAmount);
+                    hpChanged = true;
+                    logAction(`🌿 ${char.name}이(가) [${effect.name}] 효과로 **${healAmount} 신체 회복!**`, "heal");
+                } else if (effect.effectType === 'damage') {
+                    const damageAmount = effect.value || 10;
+                    finalBodyHp = Math.max(0, finalBodyHp - damageAmount);
+                    hpChanged = true;
+                    logAction(`☠️ ${char.name}이(가) [${effect.name}] 효과로 **${damageAmount} 피해**를 입었습니다!`, "damage");
                 }
             });
 
-            if (closestTarget) {
-                const attackSkillId = enemy.skills.find(id => SKILLS[id]?.category === 'Attack');
-
-                if (attackSkillId) {
-                    const enemyRef = doc(db, 'games', gameId, 'characters', enemy.id);
-                    batch.update(enemyRef, {
-                        nextAction: {
-                            targetId: closestTarget.id,
-                            skillId: attackSkillId
-                        }
-                    });
-                }
-            }
-        }
-    });
-
-    await batch.commit();
-    await logAction("🤖 AI가 모든 적의 행동 계획을 수립했습니다.", "system");
-}
-
-async function executeSingleEnemyAction(enemyId) {
-    const enemy = characters.find(c => c.id === enemyId);
-    if (!enemy || !enemy.nextAction) return;
-
-    currentlyActingEnemyId = enemy.id;
-    render();
-    await delay(700);
-
-    const target = characters.find(c => c.id === enemy.nextAction.targetId);
-    const skill = SKILLS[enemy.nextAction.skillId];
-
-    if (target && target.bodyHp > 0 && skill) {
-        let bestMovePos = { x: enemy.x, y: enemy.y };
-        const moveRange = enemy.moveRange || SKILLS['move']?.range || 1;
-        const attackRange = skill.range;
-        
-        if (getDistance(enemy, target) > attackRange) {
-            let minMoveDistance = Infinity;
-            for (let dy = -moveRange; dy <= moveRange; dy++) {
-                for (let dx = -moveRange; dx <= moveRange; dx++) {
-                    if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
-                    const moveX = enemy.x + dx, moveY = enemy.y + dy;
-                    if (!canPlaceCharacter(enemy, moveX, moveY)) continue;
-                    
-                    const movedPos = { x: moveX, y: moveY };
-                    if (getDistance(movedPos, target) <= attackRange) {
-                        const moveDistance = Math.abs(dx) + Math.abs(dy);
-                        if (moveDistance < minMoveDistance) {
-                            minMoveDistance = moveDistance;
-                            bestMovePos = movedPos;
-                        }
+            const updatedEffects = effects.reduce((acc, effect) => {
+                if (effect.isNew) {
+                    const { isNew, ...rest } = effect;
+                    acc.push(rest);
+                } else {
+                    const newTurnsRemaining = effect.turnsRemaining - 1;
+                    if (newTurnsRemaining > 0) {
+                        acc.push({ ...effect, turnsRemaining: newTurnsRemaining });
+                    } else {
+                        logAction(`⏱️ ${char.name}의 [${effect.name}] 효과가 사라졌습니다.`, "system");
                     }
                 }
-            }
+                return acc;
+            }, []);
+
+            const updates = { statusEffects: updatedEffects };
+            if (hpChanged) { updates.bodyHp = finalBodyHp; updates.hp = finalBodyHp; }
+            char.statusEffects = updatedEffects;
+            if (hpChanged) { char.bodyHp = finalBodyHp; char.hp = finalBodyHp; }
+            batch.update(doc(db, 'games', gameId, 'characters', char.id), updates);
         }
-        
-        if (bestMovePos.x !== enemy.x || bestMovePos.y !== enemy.y) {
-            await logAction(`🏃 ${enemy.name}이(가) 이동합니다.`, "move");
-            await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), { x: bestMovePos.x, y: bestMovePos.y });
-            await delay(1000);
+        await batch.commit();
+
+        await logAction(`- 라운드 ${round} 종료 -`, "system");
+
+        const isGameOver = await checkGameEndCondition();
+        if (isGameOver) return;
+
+        const newRound = round + 1;
+        if (maxRounds > 0 && newRound > maxRounds) {
+            await logAction(`- 전투 종료: 최대 라운드 도달 -`, "system");
+            await showGameSummaryModal("시간 종료", `최대 라운드(${maxRounds})에 도달하여 전투가 종료되었습니다.`);
+            return;
         }
 
-        const updatedEnemy = characters.find(c => c.id === enemy.id);
-        const updatedTarget = characters.find(c => c.id === target.id);
-
-        if (updatedTarget && updatedTarget.bodyHp > 0 && getDistance(updatedEnemy, updatedTarget) <= attackRange) {
-            await executeSkill(updatedEnemy, updatedTarget, skill.id, false);
-            await delay(1000);
-        } else {
-            await logAction(`...하지만 ${enemy.name}의 공격 범위에 대상이 없습니다!`, "system");
-            await delay(500);
-        }
-    }
-    
-    await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), { nextAction: null });
-    
-    currentlyActingEnemyId = null;
-}
-    async function executeEnemyActions() {
-    await logAction(`🔥 적들이 행동을 개시합니다!`, "system");
-
-    const stunnedEnemies = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.statusEffects?.some(e => e.id === 'stunned'));
-    for (const enemy of stunnedEnemies) {
-        await logAction(`💫 ${enemy.name}은(는) [행동 불가] 상태이므로 행동하지 못합니다.`, "system");
+        round = newRound;
+        await setDoc(doc(db, 'games', gameId), { round: newRound }, { merge: true });
+        await startNewRound();
     }
 
-    const enemiesToAct = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.nextAction && !c.statusEffects?.some(e => e.id === 'stunned'));
+    // ============ 적 AI 자동 실행 (예고 없이 즉시 이동+공격) ============
+    function findTauntTarget(enemy) {
+        const tauntEffect = (enemy.statusEffects || []).find(e => e.id === 'taunted' && e.casterId);
+        if (!tauntEffect) return null;
+        const taunter = characters.find(c => c.id === tauntEffect.casterId);
+        return (taunter && taunter.type !== enemy.type && taunter.bodyHp > 0 && taunter.x !== null) ? taunter : null;
+    }
 
-    for (const enemy of enemiesToAct) {
-        await updateDoc(doc(db, 'games', gameId), { actingEnemyId: enemy.id });
-        await delay(700);
+    function findNearestEnemyTarget(enemy) {
+        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null);
+        let closest = null, minDist = Infinity;
+        livingTargets.forEach(t => {
+            const d = getDistance(enemy, t);
+            if (d < minDist) { minDist = d; closest = t; }
+        });
+        return closest;
+    }
 
-        const target = characters.find(c => c.id === enemy.nextAction.targetId);
-        const skill = SKILLS[enemy.nextAction.skillId];
-
-        if (!target || !skill) {
-            await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), { nextAction: null });
-            continue;
-        }
-
-        let bestMovePos = { x: enemy.x, y: enemy.y };
+    // 광역 스킬 사용 시, 이동 가능 범위 내에서 가장 많은 상대를 타격할 수 있는 목표를 찾습니다.
+    function findBestAoeTarget(enemy, skill) {
+        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null);
+        if (livingTargets.length === 0) return null;
         const moveRange = enemy.moveRange !== undefined ? enemy.moveRange : (SKILLS['move']?.range || 1);
+
+        let best = null, bestCount = -1, bestDist = Infinity;
+        livingTargets.forEach(candidate => {
+            const dist = getDistance(enemy, candidate);
+            if (dist > skill.range + moveRange) return; // 이동해도 닿지 않음
+            const hitCount = findTargetsInAoe(candidate.x, candidate.y, skill.aoeRange, skill.aoeShape, skill.type, enemy.type).length;
+            if (hitCount > bestCount || (hitCount === bestCount && dist < bestDist)) {
+                best = candidate; bestCount = hitCount; bestDist = dist;
+            }
+        });
+        return best;
+    }
+
+    // 적 한 캐릭터의 행동 1회(이동 + 스킬)를 실행하고, 이번 행동으로 추가행동 권한을 얻었는지 반환합니다.
+    async function runSingleEnemyAction(currentEnemy) {
+        const healSkillId = currentEnemy.skills.find(id => SKILLS[id]?.category === 'Heal');
+        if (healSkillId) {
+            const healSkill = SKILLS[healSkillId];
+            const allyTargets = characters.filter(c =>
+                c.type === currentEnemy.type && c.id !== currentEnemy.id && c.bodyHp > 0 && c.x !== null &&
+                c.bodyHp < c.maxBodyHp * 0.7 && getDistance(currentEnemy, c) <= healSkill.range
+            );
+            if (allyTargets.length > 0) {
+                allyTargets.sort((a, b) => (a.bodyHp / a.maxBodyHp) - (b.bodyHp / b.maxBodyHp));
+                await delay(600);
+                const result = await executeSkill(currentEnemy, allyTargets[0], healSkillId);
+                await delay(800);
+                return result.bonus;
+            }
+        }
+
+        const attackSkillId = currentEnemy.skills.find(id => SKILLS[id]?.category === 'Attack');
+        if (!attackSkillId) {
+            await logAction(`...${currentEnemy.name}은(는) 사용할 스킬이 없어 행동을 종료합니다.`, "system");
+            return false;
+        }
+        const skill = SKILLS[attackSkillId];
+
+        let target = findTauntTarget(currentEnemy);
+        if (!target) {
+            target = skill.isAoe ? findBestAoeTarget(currentEnemy, skill) : findNearestEnemyTarget(currentEnemy);
+        }
+        if (!target) {
+            await logAction(`...${currentEnemy.name}이(가) 공격할 대상을 찾지 못했습니다.`, "system");
+            return false;
+        }
+
+        const moveRange = currentEnemy.moveRange !== undefined ? currentEnemy.moveRange : (SKILLS['move']?.range || 1);
         const attackRange = skill.range;
+        let bestMovePos = { x: currentEnemy.x, y: currentEnemy.y };
 
-        const phantomEnemy = { ...enemy };
-        if (!isAttackPossible(phantomEnemy, target, attackRange)) {
-            let minMoveDistance = Infinity; // 공격하기 위해 움직여야 하는 최소 거리
-            let foundAttackSpot = false;
-
-            // 1. 공격 가능한 최적의 위치 탐색
+        if (!isAttackPossible(currentEnemy, target, attackRange)) {
+            let minMoveDistance = Infinity;
+            let foundSpot = false;
             for (let dy = -moveRange; dy <= moveRange; dy++) {
                 for (let dx = -moveRange; dx <= moveRange; dx++) {
                     if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
-
-                    const moveX = enemy.x + dx;
-                    const moveY = enemy.y + dy;
-
-                    if (!canPlaceCharacter(enemy, moveX, moveY)) continue;
-                    
-                    const phantomAttacker = { ...enemy, x: moveX, y: moveY };
-                    if (isAttackPossible(phantomAttacker, target, attackRange)) {
-                        foundAttackSpot = true;
+                    const moveX = currentEnemy.x + dx, moveY = currentEnemy.y + dy;
+                    if (!canPlaceCharacter(currentEnemy, moveX, moveY)) continue;
+                    const phantom = { ...currentEnemy, x: moveX, y: moveY };
+                    if (isAttackPossible(phantom, target, attackRange)) {
+                        foundSpot = true;
                         const moveDistance = Math.abs(dx) + Math.abs(dy);
-                        if (moveDistance < minMoveDistance) {
-                            minMoveDistance = moveDistance;
-                            bestMovePos = { x: moveX, y: moveY };
-                        }
+                        if (moveDistance < minMoveDistance) { minMoveDistance = moveDistance; bestMovePos = { x: moveX, y: moveY }; }
                     }
                 }
             }
-
-            // 2. 공격 가능한 위치가 없을 경우, 목표를 향해 최대한 이동
-            if (!foundAttackSpot) {
-                let minTargetDistance = getDistance(enemy, target); // 목표까지의 현재 거리
-
+            if (!foundSpot) {
+                let minTargetDistance = getDistance(currentEnemy, target);
                 for (let dy = -moveRange; dy <= moveRange; dy++) {
                     for (let dx = -moveRange; dx <= moveRange; dx++) {
                         if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
-
-                        const moveX = enemy.x + dx;
-                        const moveY = enemy.y + dy;
-
-                        if (!canPlaceCharacter(enemy, moveX, moveY)) continue;
-                        
+                        const moveX = currentEnemy.x + dx, moveY = currentEnemy.y + dy;
+                        if (!canPlaceCharacter(currentEnemy, moveX, moveY)) continue;
                         const movedPos = { x: moveX, y: moveY };
-                        const targetDistance = getDistance(movedPos, target);
-                        
-                        if (targetDistance < minTargetDistance) {
-                            minTargetDistance = targetDistance;
-                            bestMovePos = movedPos;
-                        }
+                        const d = getDistance(movedPos, target);
+                        if (d < minTargetDistance) { minTargetDistance = d; bestMovePos = movedPos; }
                     }
                 }
             }
         }
-        
-        // 최종 결정된 위치로 이동
-        if (bestMovePos.x !== enemy.x || bestMovePos.y !== enemy.y) {
-            await logAction(`🏃 ${enemy.name}이(가) 이동합니다.`, "move");
-            await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), { x: bestMovePos.x, y: bestMovePos.y });
-            await delay(1000);
+
+        if (bestMovePos.x !== currentEnemy.x || bestMovePos.y !== currentEnemy.y) {
+            await logAction(`🏃 ${currentEnemy.name}이(가) 이동합니다.`, "move");
+            await updateDoc(doc(db, 'games', gameId, 'characters', currentEnemy.id), { x: bestMovePos.x, y: bestMovePos.y });
+            currentEnemy.x = bestMovePos.x; currentEnemy.y = bestMovePos.y;
+            await delay(800);
         }
 
-        const updatedEnemy = characters.find(c => c.id === enemy.id);
         const updatedTarget = characters.find(c => c.id === target.id);
-
-        if (updatedTarget && updatedTarget.bodyHp > 0 && isAttackPossible(updatedEnemy, updatedTarget, attackRange)) {
-            await updateDoc(doc(db, 'games', gameId), {
-                foreshadowingAction: {
-                    charId: updatedEnemy.id,
-                    skillId: skill.id
-                }
-            });
-            await delay(1200);
-
-            await executeSkill(updatedEnemy, updatedTarget, skill.id);
-
-            await updateDoc(doc(db, 'games', gameId), {
-                foreshadowingAction: null
-            });
-            await delay(1000);
-        } else if (bestMovePos.x !== enemy.x || bestMovePos.y !== enemy.y) {
-            // 이동은 했지만 공격은 못한 경우
-            await logAction(`...${enemy.name}이(가) ${target.name}을(를) 향해 접근합니다.`, "move");
-            await delay(500);
+        if (updatedTarget && updatedTarget.bodyHp > 0 && isAttackPossible(currentEnemy, updatedTarget, attackRange)) {
+            const result = await executeSkill(currentEnemy, updatedTarget, attackSkillId);
+            await delay(800);
+            return result.bonus;
         } else {
-            // 이동도, 공격도 못한 경우
-            await logAction(`...하지만 ${enemy.name}의 공격 범위에 대상이 없습니다!`, "system");
-            await delay(500);
+            await logAction(`...하지만 ${currentEnemy.name}의 공격 범위에 대상이 없습니다!`, "system");
+            return false;
         }
-        
-        await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), { nextAction: null });
-        await updateDoc(doc(db, 'games', gameId), { actingEnemyId: null });
     }
 
-    logAction("✅ 모든 적의 행동이 종료되었습니다.", "system");
-    await delay(500);
+    // 적 캐릭터의 턴 전체를 예고 없이 자동 실행합니다 (명중 시 최대 1회 추가행동 포함).
+    async function runEnemyAutoTurn(enemy) {
+        if (enemy.statusEffects?.some(e => e.id === 'stunned')) {
+            await logAction(`💫 ${enemy.name}은(는) [기절] 상태이므로 행동하지 못합니다.`, "system");
+            await completeActorTurn(enemy.id, false);
+            return;
+        }
 
-    advanceRoundPhase();
-}
+        actingEnemyId = enemy.id;
+        await setDoc(doc(db, 'games', gameId), { actingEnemyId: enemy.id }, { merge: true });
+        render();
+
+        for (let actionIndex = 0; actionIndex < 2; actionIndex++) {
+            const currentEnemy = characters.find(c => c.id === enemy.id);
+            if (!currentEnemy || currentEnemy.bodyHp <= 0) break;
+            if (actionIndex === 1) {
+                await logAction(`⚡ ${currentEnemy.name}이(가) 명중 판정에 성공해 추가 행동을 실행합니다!`, "system");
+                await delay(500);
+            }
+            const bonus = await runSingleEnemyAction(currentEnemy);
+            if (!bonus) break;
+        }
+
+        actingEnemyId = null;
+        await setDoc(doc(db, 'games', gameId), { actingEnemyId: null }, { merge: true });
+        await completeActorTurn(enemy.id, false);
+    }
 function showCombatText(character, text, type) {
     if (!character || character.x === null) return;
 
@@ -2060,49 +1991,6 @@ function showCombatText(character, text, type) {
     setTimeout(() => {
         textElement.remove();
     }, 1500);
-}
-
-function renderForeshadowing() {
-    const svgLayer = document.getElementById('foreshadow-layer');
-    const boardRect = gameBoard.getBoundingClientRect();
-    const containerRect = gameBoard.parentElement.getBoundingClientRect();
-
-    svgLayer.style.top = `${boardRect.top - containerRect.top}px`;
-    svgLayer.style.left = `${boardRect.left - containerRect.left}px`;
-    svgLayer.style.width = `${boardRect.width}px`;
-    svgLayer.style.height = `${boardRect.height}px`;
-    svgLayer.innerHTML = ''; 
-    
-    document.querySelectorAll('.enemy-threat-range').forEach(cell => cell.classList.remove('enemy-threat-range'));
-
-    const cellWidth = boardRect.width / BOARD_SIZE;
-    const cellHeight = boardRect.height / BOARD_SIZE;
-
-    if (gameState !== 'STARTED' || (roundPhase !== 'PLAYER_PHASE' && roundPhase !== 'ENEMY_FORESHADOW')) {
-        return;
-    }
-
-    characters.forEach(char => {
-        if (char.type === 'ENEMY' && char.nextAction && char.bodyHp > 0) {
-            const target = characters.find(c => c.id === char.nextAction.targetId);
-            if (!target || target.bodyHp <= 0) return;
-
-            // 점선 그리기 로직만 남깁니다.
-            const startX = (char.x + char.size / 2) * cellWidth;
-            const startY = (char.y + char.size / 2) * cellHeight;
-            const endX = (target.x + target.size / 2) * cellWidth;
-            const endY = (target.y + target.size / 2) * cellHeight;
-
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', startX);
-            line.setAttribute('y1', startY);
-            line.setAttribute('x2', endX);
-            line.setAttribute('y2', endY);
-            line.setAttribute('class', 'foreshadow-line');
-            svgLayer.appendChild(line);
-
-        }
-    });
 }
 
     function showBannerAnnouncement(line1, line2, size1 = '1.5rem', size2 = '3.5rem') {
@@ -2132,25 +2020,6 @@ function renderForeshadowing() {
     }
 
     
-    // NEW: Function to check for damage tile and apply damage if necessary
-    async function checkAndApplyTileDamage(char) {
-        if (char.x === null || char.bodyHp <= 0) return;
-
-        const tileKey = `${char.x},${char.y}`;
-        const tile = boardTiles[tileKey];
-
-        if (tile && tile.type === 'damage') {
-            const damage = DAMAGE_TILE_DAMAGE;
-            const newBodyHp = Math.max(0, char.bodyHp - damage);
-
-            await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { bodyHp: newBodyHp, hp: newBodyHp });
-
-            let message = `🩸 ${char.name}이(가) 대미지 칸에 서있어 **${damage} 피해**를 입었습니다!`;
-            if (newHp === 0) message += `<br>💀 ${char.name}이(가) 쓰러졌습니다!`;
-            await logAction(message, "damage");
-        }
-    }
-
     // 두 지점 사이의 거리를 계산하는 도우미 함수
     function getDistance(pos1, pos2) {
         if (!pos1 || !pos2) return Infinity;
@@ -2182,192 +2051,6 @@ function isAttackPossible(attacker, target, attackRange) {
     // 모든 칸을 확인해도 공격 가능한 경우가 없으면 false 반환
     return false;
 }
-
-    // 자동 턴을 실행하는 메인 AI 함수
-    async function runAutoTurn(character) {
-        await logAction(`🤖 ${character.name}의 자동 턴을 시작합니다.`, "system");
-
-        // 1. 공격할 대상 찾기 (살아있는 적군)
-        const targets = characters.filter(c => c.type !== character.type && c.bodyHp > 0 && c.x !== null);
-        if (targets.length === 0) {
-            await logAction(`🤖 공격할 대상이 없어 ${character.name}이(가) 턴을 종료합니다.`, "system");
-            await nextTurn();
-            return;
-        }
-
-        // 1.1. 가장 가까운 적을 타겟으로 설정
-        let closestTarget = null;
-        let minDistance = Infinity;
-        targets.forEach(target => {
-            const distance = getDistance(character, target);
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestTarget = target;
-            }
-        });
-
-        // 2. 사용할 스킬 선택 (가장 첫 번째 공격 스킬)
-        const attackSkillId = character.skills.find(id => SKILLS[id]?.category === 'Attack');
-        if (!attackSkillId) {
-            await logAction(`🤖 사용할 공격 스킬이 없어 ${character.name}이(가) 턴을 종료합니다.`, "system");
-            await nextTurn();
-            return;
-        }
-        const attackSkill = SKILLS[attackSkillId];
-
-        // 3. 이동 및 공격 위치 계산
-        const moveRange = character.moveRange || SKILLS['move']?.range || 1;
-        const attackRange = attackSkill.range;
-        const characterSize = character.size || 1;
-
-        let bestMovePos = { x: character.x, y: character.y };
-        let canAttackAfterMove = false;
-
-        // 3.1. 현재 위치에서 공격 가능한지 확인
-        const distanceToTarget = getDistance(character, closestTarget);
-        if (distanceToTarget <= attackRange) {
-            canAttackAfterMove = true;
-        } else {
-            // 3.2. 이동해서 공격할 최적의 위치 찾기
-            let bestAttackSpot = null;
-            let minMoveDistance = Infinity;
-
-            // 이동 가능한 모든 칸을 순회
-            for (let dy = -moveRange; dy <= moveRange; dy++) {
-                for (let dx = -moveRange; dx <= moveRange; dx++) {
-                    if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
-
-                    const moveX = character.x + dx;
-                    const moveY = character.y + dy;
-
-                    if (moveX < 0 || moveY < 0 || moveX >= BOARD_SIZE || moveY >= BOARD_SIZE) continue;
-                    if (!canPlaceCharacter(character, moveX, moveY)) continue;
-                    
-                    const movedPos = { x: moveX, y: moveY };
-                    const distanceToTargetAfterMove = getDistance(movedPos, closestTarget);
-
-                    // 이동 후 공격이 가능하다면, 해당 위치를 후보로
-                    if (distanceToTargetAfterMove <= attackRange) {
-                        canAttackAfterMove = true;
-                        // 가장 적게 움직이는 위치를 선택
-                        const moveDistance = getDistance(character, movedPos);
-                        if (moveDistance < minMoveDistance) {
-                            minMoveDistance = moveDistance;
-                            bestAttackSpot = movedPos;
-                        }
-                    }
-                }
-            }
-             if (bestAttackSpot) {
-                bestMovePos = bestAttackSpot;
-            } else {
-                let closestPosToTarget = bestMovePos;
-                let minDistanceToTarget = getDistance(bestMovePos, closestTarget);
-
-                for (let dy = -moveRange; dy <= moveRange; dy++) {
-                    for (let dx = -moveRange; dx <= moveRange; dx++) {
-                        if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
-
-                        const moveX = character.x + dx;
-                        const moveY = character.y + dy;
-                        if (moveX < 0 || moveY < 0 || moveX >= BOARD_SIZE || moveY >= BOARD_SIZE) continue;
-                        if (!canPlaceCharacter(character, moveX, moveY)) continue;
-
-                        const movedPos = { x: moveX, y: moveY };
-                        const dist = getDistance(movedPos, closestTarget);
-                        if (dist < minDistanceToTarget) {
-                            minDistanceToTarget = dist;
-                            closestPosToTarget = movedPos;
-                        }
-                    }
-                }
-                bestMovePos = closestPosToTarget;
-            }
-        }
-        
-        const moved = (bestMovePos.x !== character.x || bestMovePos.y !== character.y);
-        if (moved) {
-            await logAction(`🤖 ${character.name}이(가) (${bestMovePos.x}, ${bestMovePos.y})(으)로 이동합니다.`, "move");
-            await updateDoc(doc(db, 'games', gameId, 'characters', character.id), { x: bestMovePos.x, y: bestMovePos.y });
-        } else {
-            await logAction(`🤖 ${character.name}이(가) 제자리를 유지합니다.`, "system");
-        }
-
-        setTimeout(async () => {
-            if (canAttackAfterMove) {
-                await logAction(`🤖 ${character.name}이(가) ${closestTarget.name}을(를) ${attackSkill.name}(으)로 공격!`, "system");
-                await executeSkill(character, closestTarget, attackSkillId);
-            } else {
-                await logAction(`🤖 공격할 수 없어 ${character.name}이(가) 턴을 종료합니다.`, "system");
-                await nextTurn();
-            }
-        }, moved ? 1500 : 500);
-    }
-    async function updateTurnIndex(newIndex, reverse = false) {
-    if (characters.length === 0 || !gameId) return;
-
-    let newRound = round;
-    if (!reverse && newIndex < currentTurnIndex) {
-        newRound++;
-        await logAction(`▶️ 라운드 ${newRound} 시작`, "system");
-    } else if (reverse && newIndex > currentTurnIndex) {
-        if (newRound > 1) {
-            newRound--;
-            await logAction(`◀️ 이전 라운드로 돌아갑니다. (라운드 ${newRound})`, "system");
-        }
-    }
-    
-    currentTurnIndex = newIndex % characters.length;
-    const currentTurnChar = characters[currentTurnIndex];
-    const currentTurnCharId = currentTurnChar?.id || null;
-
-    if (maxRounds > 0 && newRound > maxRounds) {
-        await logAction(`- 전투 종료: 최대 라운드 도달 -`, "system");
-        await showGameSummaryModal("시간 종료", `최대 라운드(${maxRounds})에 도달하여 전투가 종료되었습니다.`);
-        return;
-    } 
-    
-    await setDoc(doc(db, 'games', gameId), { round: newRound, currentTurnIndex, currentTurnCharId }, { merge: true });
-    
-     if (gameState === 'STARTED' && currentTurnChar && !reverse) {
-
-        const isGameOver = await checkGameEndCondition();
-        if (isGameOver) return;
-
-        await checkAndApplyTileDamage(currentTurnChar);
-    }
-}
-
-
-    async function nextTurn() {
-        if (characters.length === 0 || !gameId) return;
-        turnPhase = 'MOVE';
-        selectedSkill = 'move';
-        let nextIndex = currentTurnIndex;
-        do {
-            nextIndex = (nextIndex + 1) % characters.length;
-        } while (characters.length > 1 && characters[nextIndex] && (characters[nextIndex].bodyHp <= 0 || characters[nextIndex].x === null));
-        
-        await updateTurnIndex(nextIndex);
-        selectedCharacterId = null;
-        // IMPORTANT: Clear UI highlights on turn change
-        document.querySelectorAll('.combat-range').forEach(cell => cell.classList.remove('combat-range', 'attack-range-move', 'attack-range-skill', 'heal-range-skill'));
-    }
-    
-    async function previousTurn() {
-        if (characters.length === 0 || !gameId) return;
-        turnPhase = 'MOVE';
-        selectedSkill = 'move';
-        let prevIndex = currentTurnIndex;
-        do {
-            prevIndex = (prevIndex - 1 + characters.length) % characters.length;
-        } while (characters.length > 1 && characters[prevIndex] && (characters[prevIndex].bodyHp <= 0 || characters[prevIndex].x === null));
-
-        await updateTurnIndex(prevIndex, true);
-        selectedCharacterId = null;
-        // IMPORTANT: Clear UI highlights on turn change
-        document.querySelectorAll('.combat-range').forEach(cell => cell.classList.remove('combat-range', 'attack-range-move', 'attack-range-skill', 'heal-range-skill'));
-    }
 
     async function updateBodyHP(char, amount, logType) {
         const newHp = Math.min(char.maxBodyHp, Math.max(0, char.bodyHp + amount));
@@ -2650,7 +2333,7 @@ function isAttackPossible(attacker, target, attackRange) {
     return true;
 }
 
-async function applyStatusEffect(target, effectInfo) {
+async function applyStatusEffect(target, effectInfo, casterId = null) {
     if (!target || !effectInfo || !effectInfo.id || !PREDEFINED_EFFECTS[effectInfo.id]) return;
 
     const baseEffect = PREDEFINED_EFFECTS[effectInfo.id];
@@ -2663,6 +2346,12 @@ async function applyStatusEffect(target, effectInfo) {
 
     if (effectInfo.value !== undefined) {
         newEffect.value = effectInfo.value;
+    }
+    if (effectInfo.speedMod !== undefined) {
+        newEffect.speedMod = effectInfo.speedMod;
+    }
+    if (newEffect.id === 'taunted' && casterId) {
+        newEffect.casterId = casterId;
     }
 
     const targetRef = doc(db, 'games', gameId, 'characters', target.id);
@@ -2739,38 +2428,36 @@ async function applyStatusEffect(target, effectInfo) {
 
     return false; // 게임 계속됨
 }
+    // 반환값: { success: 행동이 실제로 발생했는지, bonus: 명중 판정 성공으로 직후 1회 추가행동 권한을 얻었는지 }
     async function executeSkill(attacker, target, skillId) {
     const skill = SKILLS[skillId];
-    if (!skill || !target) return;
+    if (!skill || !target) return { success: false, bonus: false };
 
     let actionSucceeded = false;
+    let bonusEarned = false;
     let affectedTargets = [];
 
     if (skill.category === 'Attack') {
         if (target.type === attacker.type) {
             await logAction(`⚠️ ${attacker.name}은(는) 아군에게 공격할 수 없습니다.`, "system");
-            return;
+            return { success: false, bonus: false };
         }
 
         // 관통: instant kill if conditions met
         if (skillId === '관통') {
             if ((attacker.mentalHp || 0) > 60) {
                 await logAction(`⚠️ [관통] ${attacker.name}의 정신 내구도(${attacker.mentalHp})가 60 초과이므로 사용할 수 없습니다.`, "system");
-                return;
+                return { success: false, bonus: false };
             }
             if ((target.bodyHp || 0) > 100) {
                 await logAction(`⚠️ [관통] ${target.name}의 신체 내구도(${target.bodyHp})가 100 초과이므로 즉사 불가.`, "system");
-                return;
+                return { success: false, bonus: false };
             }
             await updateMentalHP(attacker, -skill.mpCost);
             await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { bodyHp: 0, hp: 0 });
             await logAction(`💉 [관통] ${attacker.name}: ${target.name}의 신체 내구도 → 0`, "damage");
-            if (attacker.type === 'PC' && roundPhase === 'PLAYER_PHASE') {
-                await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { hasActedThisRound: true });
-                selectedCharacterId = null; selectedSkill = null; render();
-            }
-            await checkGameEndCondition();
-            return;
+            const penetrateGameOver = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: penetrateGameOver };
         }
 
         // Hit roll for non-AoE attacks
@@ -2782,10 +2469,10 @@ async function applyStatusEffect(target, effectInfo) {
             const hitOk = roll <= effectiveHitPct;
             if (!hitOk) {
                 await logAction(`💨 ${attacker.name}의 ${skill.name}이(가) 빗나갔습니다! (명중률: ${effectiveHitPct}%, 굴림: ${roll})`, "system");
-                render();
-                return;
+                return { success: false, bonus: false };
             } else {
-                await logAction(`✅ 명중! (명중률: ${effectiveHitPct}%, 굴림: ${roll}) — ${attacker.name}은 이번 라운드 추가 행동 가능합니다.`, "system");
+                bonusEarned = true;
+                await logAction(`✅ 명중! (명중률: ${effectiveHitPct}%, 굴림: ${roll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
             }
         }
 
@@ -2807,10 +2494,6 @@ async function applyStatusEffect(target, effectInfo) {
             }
         }
     } else if (skill.category === 'Heal' || skill.category === 'Support' || skill.category === 'Defense' || skill.category === 'Special') {
-        if (skill.category === 'Attack' && target.type !== attacker.type) {
-            await logAction(`⚠️ ${attacker.name}은(는) 적군에게 ${skill.name}을(를) 사용할 수 없습니다.`, "system");
-            return;
-        }
         const success = await applyHealOrSupport(attacker, target, skillId);
         if (success) {
             actionSucceeded = true;
@@ -2819,34 +2502,20 @@ async function applyStatusEffect(target, effectInfo) {
     } else {
         actionSucceeded = true;
     }
-    
+
     if (skill.appliesEffect && affectedTargets.length > 0) {
         for (const finalTarget of affectedTargets) {
             // 💥 여기가 핵심: attacker가 아닌 finalTarget에게 효과를 적용합니다.
-            await applyStatusEffect(finalTarget, skill.appliesEffect);
+            await applyStatusEffect(finalTarget, skill.appliesEffect, attacker.id);
         }
     }
-    
+
+    let gameEnded = false;
     if (actionSucceeded) {
-        const isGameOver = await checkGameEndCondition();
-        if (isGameOver) return;
-
-        if (attacker.type === 'PC' && roundPhase === 'PLAYER_PHASE') {
-            await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { hasActedThisRound: true });
-            selectedCharacterId = null;
-            selectedSkill = null;
-            render();
-        }
-
-        if (attacker.type === 'ENEMY' && roundPhase === 'ENEMY_EXECUTION') {
-            await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { nextAction: null });
-            selectedCharacterId = null;
-            selectedSkill = null;
-            render();
-        }
-    } else {
-        render(); 
+        gameEnded = await checkGameEndCondition();
     }
+
+    return { success: actionSucceeded, bonus: actionSucceeded && bonusEarned && !gameEnded, gameEnded };
 }
 
     async function undoMove() {
@@ -3094,7 +2763,7 @@ async function handleLogout() {
             infoContainer.querySelector('button').onclick = (e) => { e.stopPropagation(); openProfileModal(char); };
             charCard.appendChild(infoContainer);
             charCard.onclick = () => {
-    const isMyTurn = (loggedInCharId === char.id && characters[currentTurnIndex]?.id === char.id);
+    const isMyTurn = (loggedInCharId === char.id && currentTurnCharId === char.id);
     const canSelect = (isMyTurn && gameState === 'STARTED');
 
     if (isPlaced && !isDead) {
@@ -3103,7 +2772,7 @@ async function handleLogout() {
                         // selectedCharacterId = null;          
                     } else if (canSelect) {
             selectedCharacterId = char.id;
-            turnPhase = 'MOVE';
+            selectedCharActionPhase = 'MOVE';
             selectedSkill = 'move';
             preMovePosition = { x: char.x, y: char.y };
         }
@@ -3126,152 +2795,74 @@ async function handleLogout() {
     }
 
 function renderSkillButtons(selectedChar) {
-    skillControls.innerHTML = ''; 
+    skillControls.innerHTML = '';
 
     if (gameState === 'PREPARATION') {
         skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">준비 단계입니다. 캐릭터를 보드에 배치하세요.</p>`;
-        
+
         if (isAdmin) {
             skillControls.innerHTML += `
             <div class="mt-4 space-y-2">
                 <button id="admin-start-game-btn" class="w-full bg-green-600 p-2 font-bold">⚔️ 게임 시작</button>
             </div>`;
         }
-        
+
         const startGameBtn = document.getElementById('admin-start-game-btn');
         if(startGameBtn) {
             startGameBtn.onclick = async () => {
                 if (gameId) {
-                    await setDoc(doc(db, 'games', gameId), { 
-                        gameState: 'STARTED',
-                        roundPhase: 'ENEMY_FORESHADOW' 
-                    }, { merge: true });
+                    await setDoc(doc(db, 'games', gameId), { gameState: 'STARTED' }, { merge: true });
+                    gameState = 'STARTED';
 
                     const batch = writeBatch(db);
                     characters.forEach(char => {
-                        const charRef = doc(db, 'games', gameId, 'characters', char.id);
-                        batch.update(charRef, { hasActedThisRound: false, nextAction: null });
+                        char.hasActedThisRound = false;
+                        batch.update(doc(db, 'games', gameId, 'characters', char.id), { hasActedThisRound: false });
                     });
                     await batch.commit();
-                    
-                    await logAction(`⚔️ 게임이 시작되었습니다! 라운드 1의 적 행동 예고를 시작합니다.`, "system");
+
+                    await logAction(`⚔️ 게임이 시작되었습니다! 속도 순서를 계산합니다.`, "system");
+                    await startNewRound();
                 }
             };
         }
 
-        return; 
-    }
-
-    if (roundPhase === 'ENEMY_FORESHADOW') {
-        if (isAdmin) {
-            const selectedEnemy = characters.find(c => c.id === adminSelectedEnemyId);
-            let skillButtonsHtml = '';
-
-            if (selectedEnemy) {
-                skillButtonsHtml += `<h4 class="text-md font-bold text-yellow-300 mt-3 mb-2">사용할 스킬 선택:</h4><div class="flex flex-wrap gap-2">`;
-                selectedEnemy.skills.forEach(id => {
-                    const skill = SKILLS[id];
-                    if (skill) {
-                        const isSelected = adminForeshadowSkillId === id;
-                        skillButtonsHtml += `<button data-skill-id="${id}" class="skill-btn foreshadow-skill-btn ${isSelected ? 'ring-2 ring-red-400' : ''} p-2 flex items-center flex-col text-xs font-semibold">
-                                        ${skill.icon} ${skill.name}
-                                      </button>`;
-                    }
-                });
-                skillButtonsHtml += `</div>`;
-            }
-
-            skillControls.innerHTML = `
-                <h3 class="text-lg font-bold mb-2 text-red-400">적 행동 예고</h3>
-                <p class="text-sm text-gray-400 mb-4">① 적 선택 → ② 스킬 선택 → ③ 대상 아군 클릭</p>
-                <p class="text-sm font-semibold mb-2">선택된 적: <span class="text-yellow-400">${selectedEnemy?.name || '없음'}</span></p>
-                <div id="foreshadow-skill-container" class="mb-4">${skillButtonsHtml}</div>
-                <button id="end-foreshadow-btn" class="w-full bg-green-600 p-2 font-bold">✔️ 예고 완료</button>
-            `;
-            document.getElementById('end-foreshadow-btn').onclick = () => setDoc(doc(db, 'games', gameId), { roundPhase: 'PLAYER_PHASE' }, { merge: true });
-
-            document.querySelectorAll('.foreshadow-skill-btn').forEach(btn => {
-                btn.onclick = (e) => {
-                    adminForeshadowSkillId = e.currentTarget.dataset.skillId;
-                    render(); 
-                };
-            });
-        } else {
-            skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">관리자가 적의 행동을 설정하고 있습니다...</p>`;
-        }
         return;
     }
 
-    if (roundPhase === 'ENEMY_EXECUTION') {
-        if (isAdmin) {
-            const isManuallyControllingEnemy = selectedChar && selectedChar.type === 'ENEMY';
-            if (isManuallyControllingEnemy) {
-                let html = `<h3 class="text-lg font-bold mb-2 text-red-500">[수동 조작] ${selectedChar.name} 행동</h3>`;
-                html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${selectedChar.mentalHp}/${selectedChar.maxMentalHp}</p>`;
-                
-                if (selectedCharActionPhase === 'MOVE') {
-                    html += `<p class="text-sm text-gray-400">이동할 위치를 선택하세요.</p>`;
-                } else { 
-                    html += `<div class="flex flex-wrap gap-2">`;
-                    selectedChar.skills.forEach(id => {
-                        const skill = SKILLS[id];
-                        if (skill && skill.id !== 'move') {
-                            const canUse = selectedChar.mentalHp >= skill.mpCost;
-                            const disabledClass = canUse ? '' : 'opacity-50 cursor-not-allowed';
-                            html += `<button data-skill-id="${id}" class="skill-btn ${selectedSkill === id ? 'ring-2 ring-red-400' : ''} text-white p-2 flex items-center flex-col text-xs font-semibold ${disabledClass}" ${canUse ? '' : 'disabled'}>
-                                ${skill.icon} ${skill.name}
-                                <span class="text-gray-400 text-xs">${skill.mpCost > 0 ? `[정신 ${skill.mpCost}]` : ''}</span>
-                                </button>`;
-                        }
-                    });
-                    html += `</div>`;
-                    html += `<button id="undo-move-btn" class="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white p-2">↩ 이동 취소</button>`;
-                }
-                
-                html += `<button id="enemy-action-complete-btn" class="w-full mt-4 bg-purple-600 p-2 font-bold">✔️ 행동 완료 (턴 넘김)</button>`;
-                skillControls.innerHTML = html;
-
-                document.getElementById('enemy-action-complete-btn').onclick = async () => {
-                    await updateDoc(doc(db, 'games', gameId, 'characters', selectedChar.id), { nextAction: null });
-                    selectedCharacterId = null;
-                    render();
-                };
-                document.getElementById('undo-move-btn')?.addEventListener('click', undoMove);
-                document.querySelectorAll('.skill-btn').forEach(btn => {
-                    btn.onclick = (e) => {
-                         selectedSkill = e.currentTarget.dataset.skillId;
-                         render();
-                    }
-                });
-
-            } else {
-                // 아직 행동하지 않은 적이 있는지 확인
-                const enemiesToAct = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.nextAction);
-                if (enemiesToAct.length > 0) {
-                     skillControls.innerHTML = `
-                        <h3 class="text-lg font-bold mb-2 text-red-400">적 행동 실행</h3>
-                        <p class="text-sm text-gray-400 mb-4">자동으로 실행하거나, 수동으로 적을 선택하여 조작하세요.</p>
-                        <button id="execute-enemies-btn" class="w-full bg-red-800 p-2 font-bold">🤖 자동 행동 개시</button>
-                    `;
-                    document.getElementById('execute-enemies-btn').onclick = executeEnemyActions;
-                } else {
-                    // 모든 적이 행동을 마쳤을 때
-                    skillControls.innerHTML = `
-                        <h3 class="text-lg font-bold mb-2 text-green-400">모든 적 행동 완료</h3>
-                        <p class="text-sm text-gray-400 mb-4">다음 라운드로 진행합니다.</p>
-                        <button id="go-to-next-round-btn" class="w-full bg-blue-600 p-2 font-bold">다음 라운드로</button>
-                    `;
-                    document.getElementById('go-to-next-round-btn').onclick = advanceRoundPhase;
-                }
-            }
-        } else {
-            skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">적들이 행동하고 있습니다...</p>`;
-        }
+    if (gameState !== 'STARTED') {
+        skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">게임이 종료되었습니다.</p>`;
         return;
     }
-    
-    // 3. 미리보기 UI
-    const isPreviewing = selectedChar && selectedChar.id === previewCharacterId;
+
+    // 적이 예고 없이 자동으로 행동 중일 때
+    const busyEnemy = characters.find(c => c.id === actingEnemyId);
+    if (busyEnemy) {
+        skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-red-400">🤖 ${busyEnemy.name}이(가) 행동 중입니다...</h3>`;
+        return;
+    }
+
+    // 동속도라 아직 행동 순서가 정해지지 않은 경우: 직접 골라야 합니다.
+    const eligibleIds = getEligibleActorIds();
+    if (!currentTurnCharId && eligibleIds.length > 1) {
+        const eligibleChars = eligibleIds.map(id => characters.find(c => c.id === id)).filter(Boolean);
+        let html = `<h3 class="text-lg font-bold mb-2 text-yellow-400">⚖️ 동시 속도</h3>`;
+        html += `<p class="text-sm text-gray-400 mb-3">아래 캐릭터들의 속도가 같습니다. 상의하여 먼저 행동할 캐릭터를 고르세요. (선택 후 번복 불가)</p>`;
+        html += `<div class="flex flex-wrap gap-2">`;
+        eligibleChars.forEach(c => {
+            const canPick = isAdmin || loggedInCharId === c.id;
+            html += `<button data-pick-char-id="${c.id}" class="pick-active-char-btn skill-btn p-2 flex items-center flex-col text-xs font-semibold ${canPick ? '' : 'opacity-50 cursor-not-allowed'}" ${canPick ? '' : 'disabled'}>${c.type === 'ENEMY' ? '🗡️ ' : ''}${c.name}</button>`;
+        });
+        html += `</div>`;
+        skillControls.innerHTML = html;
+        document.querySelectorAll('.pick-active-char-btn').forEach(btn => {
+            btn.onclick = async (e) => { await window.pickActiveChar(e.currentTarget.dataset.pickCharId); };
+        });
+        return;
+    }
+
+    // 자기 차례가 아닌 캐릭터를 클릭해 스킬/이동 범위만 확인하는 미리보기
+    const isPreviewing = selectedChar && selectedChar.id === previewCharacterId && selectedChar.id !== currentTurnCharId;
     if (isPreviewing) {
         let html = `<h3 class="text-lg font-bold mb-2 text-cyan-400">👀 ${selectedChar.name} 미리보기</h3>`;
         html += `<p class="text-sm text-gray-400 mb-3">이동 및 스킬 범위를 확인하고 있습니다.</p>`;
@@ -3297,112 +2888,78 @@ function renderSkillButtons(selectedChar) {
         return;
     }
 
-    // 4. 플레이어 행동 단계 UI
-    if (roundPhase === 'PLAYER_PHASE') {
-    const pcs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-    const allPlayersActed = pcs.length > 0 && pcs.every(c => c.hasActedThisRound);
-
-    if (allPlayersActed) {
-        if (isAdmin) {
-            skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-green-400">모든 아군 행동 완료</h3><p class="text-sm text-gray-400 mb-4">적들이 행동을 시작합니다.</p><button id="end-player-phase-btn" class="w-full bg-red-600 p-2 font-bold">적 행동 시작</button>`;
-            document.getElementById('end-player-phase-btn').onclick = advanceRoundPhase;
-        } else {
-            skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">관리자가 턴을 넘기기를 기다리고 있습니다...</p>`;
-        }
+    if (!currentTurnCharId) {
+        skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">라운드를 정리하는 중입니다...</p>`;
         return;
     }
-    
-    const isActionablePC = selectedChar && selectedChar.type === 'PC' && !selectedChar.hasActedThisRound;
-    
-    if (isActionablePC && (canControlCharacter(selectedChar.id) || (isAdmin && selectedChar.type === 'PC'))) {
-        let html;
-        if (isAdmin) {
-             html = `<h3 class="text-lg font-bold mb-2 text-purple-400">👮 ${selectedChar.name} 행동 대리</h3>`;
-        } else {
-             html = `<h3 class="text-lg font-bold mb-2 text-green-400">${selectedChar.name} 행동</h3>`;
-        }
-        
-        html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${selectedChar.mentalHp}/${selectedChar.maxMentalHp}</p>`;
 
-        if (selectedCharActionPhase === 'MOVE') {
-            html += `<p class="text-sm text-gray-400">이동할 위치를 선택하세요.</p>`;
-        } else { 
-            html += `<div class="flex flex-wrap gap-2">`;
-            selectedChar.skills.forEach(id => {
-                const skill = SKILLS[id];
-                if (skill && skill.id !== 'move') {
-                    const isHealSupport = skill.category === 'Heal' || skill.category === 'Support';
-                    const ringColor = isHealSupport ? 'ring-green-400' : 'ring-red-400';
-                    const canUse = selectedChar.mentalHp >= skill.mpCost;
-                    const disabledClass = canUse ? '' : 'opacity-50 cursor-not-allowed';
-                    let costParts = [];
-                    if (skill.mpCost > 0) costParts.push(`정신 ${skill.mpCost}`);
-                    if (skill.multiplier > 0) costParts.push(`운용×${skill.multiplier}`);
-                    let costText = costParts.join(' | ');
-                    html += `<button data-skill-id="${id}" data-category="${skill.category}" class="skill-btn ${selectedSkill === id ? `ring-2 ${ringColor}` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold ${disabledClass}" ${canUse ? '' : 'disabled'}>
-                        ${skill.icon} ${skill.name}
-                        <span class="text-gray-400 text-xs">${costText ? `[${costText}]` : ''}</span>
-                        </button>`;
-                }
-            });
-            html += `</div>`;
-            if (!selectedChar.statusEffects?.some(e => e.id === 'rooted')) {
-                html += `<button id="undo-move-btn" class="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white p-2">↩ 이동 취소</button>`;
-            }
-        }
-        html += `<button id="action-complete-btn" class="w-full mt-4 p-2 font-bold">✔️ 행동 완료</button>`;
-        skillControls.innerHTML = html;
-        document.getElementById('action-complete-btn').onclick = async () => {
-            await updateDoc(doc(db, 'games', gameId, 'characters', selectedChar.id), { hasActedThisRound: true });
-            selectedCharacterId = null;
-            selectedSkill = null; 
-            render();
-        };
-        document.getElementById('undo-move-btn')?.addEventListener('click', undoMove);
-        document.querySelectorAll('.skill-btn').forEach(btn => {
-            btn.onclick = (e) => {
-                 selectedSkill = e.currentTarget.dataset.skillId;
-                 render();
-            }
-        });
+    const activeChar = characters.find(c => c.id === currentTurnCharId);
+    if (!activeChar) {
+        skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">대기 중...</p>`;
         return;
+    }
+
+    if (activeChar.type === 'ENEMY') {
+        skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-red-400">🤖 ${activeChar.name}의 차례입니다 (자동 실행 대기 중)</h3>`;
+        return;
+    }
+
+    const canAct = canControlCharacter(activeChar.id) || (isAdmin && activeChar.type === 'PC');
+    if (!canAct) {
+        skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">${activeChar.name}의 차례를 기다리고 있습니다...</p>`;
+        return;
+    }
+
+    let html;
+    if (isAdmin && loggedInCharId !== activeChar.id) {
+        html = `<h3 class="text-lg font-bold mb-2 text-purple-400">👮 ${activeChar.name} 행동 대리</h3>`;
     } else {
-        const isPreviewingOtherChar = isAdmin && selectedChar && selectedChar.type === 'PC';
-        if (isPreviewingOtherChar) {
-            let html = `<h3 class="text-lg font-bold mb-2 text-cyan-400">👀 ${selectedChar.name} 미리보기</h3>`;
-            html += `<p class="text-sm text-gray-400 mb-3">드래그앤드롭으로 이동하거나, 스킬 범위를 확인하세요.</p>`;
-            html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${selectedChar.mentalHp}/${selectedChar.maxMentalHp}</p>`;
-            html += `<div class="flex flex-wrap gap-2">`;
-            const moveSkill = SKILLS['move'];
-            if(moveSkill) {
-                 html += `<button data-skill-id="move" class="skill-btn ${(!selectedSkill || selectedSkill === 'move') ? `ring-2 ring-yellow-400` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold">${moveSkill.icon} ${moveSkill.name}</button>`;
-            }
-            selectedChar.skills.forEach(id => {
-                const skill = SKILLS[id];
-                if (!skill || skill.id === 'move') return;
+        html = `<h3 class="text-lg font-bold mb-2 text-green-400">${activeChar.name} 행동</h3>`;
+    }
+    if (activeExtraUsed) {
+        html += `<p class="text-xs text-yellow-400 mb-1">⚡ 추가행동 사용 중</p>`;
+    }
+
+    html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${activeChar.mentalHp}/${activeChar.maxMentalHp}</p>`;
+
+    if (selectedCharActionPhase === 'MOVE') {
+        html += `<p class="text-sm text-gray-400">이동할 위치를 선택하세요.</p>`;
+    } else {
+        html += `<div class="flex flex-wrap gap-2">`;
+        activeChar.skills.forEach(id => {
+            const skill = SKILLS[id];
+            if (skill && skill.id !== 'move') {
                 const isHealSupport = skill.category === 'Heal' || skill.category === 'Support';
                 const ringColor = isHealSupport ? 'ring-green-400' : 'ring-red-400';
-                html += `<button data-skill-id="${skill.id}" class="skill-btn ${selectedSkill === skill.id ? `ring-2 ${ringColor}` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold">${skill.icon} ${skill.name}</button>`;
-            });
-            html += `</div>`;
-            html += `<button id="end-admin-preview-btn" class="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white p-2">미리보기 종료</button>`;
-            skillControls.innerHTML = html;
-            document.getElementById('end-admin-preview-btn').onclick = () => {
-                selectedCharacterId = null;
-                previewCharacterId = null;
-                render();
-            };
-            document.querySelectorAll('.skill-btn').forEach(btn => btn.onclick = (e) => {
-                selectedSkill = e.currentTarget.dataset.skillId;
-                render();
-            });
-            return;
+                const canUse = activeChar.mentalHp >= skill.mpCost;
+                const disabledClass = canUse ? '' : 'opacity-50 cursor-not-allowed';
+                let costParts = [];
+                if (skill.mpCost > 0) costParts.push(`정신 ${skill.mpCost}`);
+                if (skill.multiplier > 0) costParts.push(`운용×${skill.multiplier}`);
+                let costText = costParts.join(' | ');
+                html += `<button data-skill-id="${id}" data-category="${skill.category}" class="skill-btn ${selectedSkill === id ? `ring-2 ${ringColor}` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold ${disabledClass}" ${canUse ? '' : 'disabled'}>
+                    ${skill.icon} ${skill.name}
+                    <span class="text-gray-400 text-xs">${costText ? `[${costText}]` : ''}</span>
+                    </button>`;
+            }
+        });
+        html += `</div>`;
+        if (!activeChar.statusEffects?.some(e => e.id === 'rooted')) {
+            html += `<button id="undo-move-btn" class="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white p-2">↩ 이동 취소</button>`;
         }
-
-        // 기본 상태 UI
-        skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">행동할 아군을 선택하세요.</p>`;
     }
-}
+    html += `<button id="action-complete-btn" class="w-full mt-4 p-2 font-bold">✔️ 행동 완료</button>`;
+    skillControls.innerHTML = html;
+    document.getElementById('action-complete-btn').onclick = async () => {
+        await completeActorTurn(activeChar.id, false);
+    };
+    document.getElementById('undo-move-btn')?.addEventListener('click', undoMove);
+    document.querySelectorAll('.skill-btn').forEach(btn => {
+        btn.onclick = (e) => {
+             selectedSkill = e.currentTarget.dataset.skillId;
+             render();
+        }
+    });
 }
     function updateCharacterList() {
     const listContent = document.getElementById('char-list-content');
@@ -3422,7 +2979,7 @@ function renderSkillButtons(selectedChar) {
     characters.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 
     characters.forEach(char => {
-        const isActionablePC = roundPhase === 'PLAYER_PHASE' && char.type === 'PC' && !char.hasActedThisRound && char.bodyHp > 0 && char.x !== null;
+        const isActionablePC = char.id === currentTurnCharId && char.type === 'PC' && !char.hasActedThisRound && char.bodyHp > 0 && char.x !== null;
 
         const charItem = document.createElement('div');
         charItem.className = `p-2 rounded-md flex flex-col cursor-pointer ${char.id === selectedCharacterId ? 'ring-2 ring-green-400' : 'hover:bg-gray-800'}`;
@@ -3474,9 +3031,8 @@ function renderSkillButtons(selectedChar) {
         name: `${charToCopy.name} (복사본)`,
         x: null,
         y: null,
-        isLoggedIn: false, 
-        hasActedThisRound: false, 
-        nextAction: null 
+        isLoggedIn: false,
+        hasActedThisRound: false
     };
     
     try {
@@ -3532,79 +3088,6 @@ function renderSkillButtons(selectedChar) {
             return `<li class="log-${log.type}">${timeString}${log.message}</li>`;
         }).join('') || `<li class="log-system">아직 기록된 행동이 없습니다.</li>`;
     }
-    function renderForeshadowRanges() {
-    document.querySelectorAll('.combat-range, .threat-range-foreshadow').forEach(cell => cell.classList.remove('combat-range', 'attack-range-move', 'attack-range-skill', 'heal-range-skill', 'threat-range-foreshadow'));
-
-    if (gameState !== 'STARTED' || roundPhase !== 'ENEMY_FORESHADOW') {
-        return;
-    }
-
-    const totalThreatCells = new Set();
-    const foreshadowingEnemies = characters.filter(c => c.nextAction && c.bodyHp > 0);
-
-    foreshadowingEnemies.forEach(char => {
-        const skillId = char.nextAction.skillId;
-        if (!SKILLS[skillId] || skillId === 'move') return;
-
-        const skill = SKILLS[skillId];
-        const moveSkill = SKILLS['move'];
-
-        const moveRange = char.moveRange !== undefined ? char.moveRange : (moveSkill?.range || 0);
-        const reachableMoveCells = new Set();
-        reachableMoveCells.add(`${char.x},${char.y}`);
-
-        if (moveRange > 0) {
-            for (let dy = -moveRange; dy <= moveRange; dy++) {
-                for (let dx = -moveRange; dx <= moveRange; dx++) {
-                    if (Math.abs(dx) + Math.abs(dy) <= moveRange) {
-                        const moveX = char.x + dx;
-                        const moveY = char.y + dy;
-                        if (canPlaceCharacter(char, moveX, moveY)) {
-                            reachableMoveCells.add(`${moveX},${moveY}`);
-                        }
-                    }
-                }
-            }
-        }
-
-        const skillRange = skill.range;
-        const skillShape = skill.rangeShape || 'diamond';
-        const charSize = char.size || 1;
-
-        reachableMoveCells.forEach(cellCoord => {
-            const [moveX, moveY] = cellCoord.split(',').map(Number);
-
-            for (let ex = 0; ex < charSize; ex++) {
-                for (let ey = 0; ey < charSize; ey++) {
-                    const originX = moveX + ex;
-                    const originY = moveY + ey;
-
-                    for (let dy = -skillRange; dy <= skillRange; dy++) {
-                        for (let dx = -skillRange; dx <= skillRange; dx++) {
-                            let inShape = (skillShape === 'diamond' && Math.abs(dx) + Math.abs(dy) <= skillRange) ||
-                                          (skillShape === 'square' && Math.abs(dx) <= skillRange && Math.abs(dy) <= skillRange) ||
-                                          (skillShape === 'cross' && ((dx === 0 && Math.abs(dy) <= skillRange) || (dy === 0 && Math.abs(dx) <= skillRange)));
-                            
-                            if (inShape) {
-                                const targetX = originX + dx;
-                                const targetY = originY + dy;
-                                if (targetX >= 0 && targetX < BOARD_SIZE && targetY >= 0 && targetY < BOARD_SIZE) {
-                                    totalThreatCells.add(`${targetX},${targetY}`);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    });
-
-    totalThreatCells.forEach(coord => {
-        const [x, y] = coord.split(',');
-        const cell = document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
-        if (cell) cell.classList.add('threat-range-foreshadow');
-    });
-}
 function renderLoginStatus() {
     const list = document.getElementById('login-status-list-modal'); 
     if (!loginStatusBtn || !list) return; 
@@ -3647,6 +3130,7 @@ function renderLoginStatus() {
 
     updateAuthStatus();
 
+    const currentEligibleIds = gameState === 'STARTED' && !currentTurnCharId ? getEligibleActorIds() : [];
     characters.filter(char => char.x !== null).forEach(char => {
         const cell = gameBoard.querySelector(`.cell[data-x='${char.x}'][data-y='${char.y}']`);
         if (cell) {
@@ -3681,22 +3165,14 @@ function renderLoginStatus() {
                 token.classList.add('token-click-through');
             }
             if (char.type === 'ENEMY') token.classList.add('enemy-token');
-            if (char.id === selectedCharacterId || char.id === adminSelectedEnemyId) token.classList.add('selected-character');
-            const isActionablePC = char.type === 'PC' && gameState === 'STARTED' && roundPhase === 'PLAYER_PHASE' && !char.hasActedThisRound;
-            if (isActionablePC) {
-                token.classList.add('current-turn-glow');
+            if (char.id === selectedCharacterId) token.classList.add('selected-character');
+            const isCurrentActor = gameState === 'STARTED' && char.id === currentTurnCharId;
+            const isTiedCandidate = currentEligibleIds.includes(char.id);
+            if (isCurrentActor || isTiedCandidate) {
+                token.classList.add(char.type === 'ENEMY' ? 'enemy-turn-glow' : 'current-turn-glow');
                 const marker = document.createElement('div');
-                marker.className = 'turn-marker';
-                marker.innerHTML = '▼';
-                token.appendChild(marker);
-            }
-
-            const isWaitingEnemy = char.type === 'ENEMY' && roundPhase === 'ENEMY_EXECUTION' && char.nextAction != null;
-            if (isWaitingEnemy) {
-                token.classList.add('enemy-turn-glow');
-                const marker = document.createElement('div');
-                marker.className = 'enemy-turn-marker';
-                marker.innerHTML = '▼';
+                marker.className = char.type === 'ENEMY' ? 'enemy-turn-marker' : 'turn-marker';
+                marker.innerHTML = isTiedCandidate ? '?' : '▼';
                 token.appendChild(marker);
             }
 
@@ -3717,11 +3193,10 @@ function renderLoginStatus() {
             barContainer.innerHTML = `<div class="hp-bar"><div class="hp-fill" style="width: ${hpPercent}%;"></div></div><div class="mp-bar"><div class="mp-fill" style="width: ${mpPercent}%;"></div></div>`;
             token.appendChild(barContainer);
 
-            if (char.nextAction && char.bodyHp > 0) {
+            if (char.id === actingEnemyId && char.bodyHp > 0) {
                 const bubble = document.createElement('div');
                 bubble.className = 'action-speech-bubble';
-                const skill = SKILLS[char.nextAction.skillId];
-                bubble.textContent = skill ? skill.name : '행동 준비...';
+                bubble.textContent = '행동 중...';
                 token.appendChild(bubble);
             }
 
@@ -3752,52 +3227,44 @@ function renderLoginStatus() {
         turnStatusDiv.style.color = 'var(--text-secondary)';
     } else {
         turnStatusTitle.textContent = `Round ${round}`;
-        if (roundPhase === 'PLAYER_PHASE') {
-            turnStatusDiv.textContent = `아군 턴`;
-            turnStatusDiv.style.color = '#34d399';
+        const activeChar = characters.find(c => c.id === currentTurnCharId);
+        if (activeChar) {
+            turnStatusDiv.textContent = `${activeChar.name}의 차례`;
+            turnStatusDiv.style.color = activeChar.type === 'ENEMY' ? '#f87171' : '#34d399';
+        } else if (gameState === 'STARTED' && getEligibleActorIds().length > 1) {
+            turnStatusDiv.textContent = `동시 속도 — 순서 선택 대기`;
+            turnStatusDiv.style.color = '#fbbf24';
         } else {
-            turnStatusDiv.textContent = `적 턴`;
-            turnStatusDiv.style.color = '#f87171';
-        }
-    }
-
-    if (roundPhase === 'ENEMY_EXECUTION' && foreshadowingAction) {
-        const actingChar = characters.find(c => c.id === foreshadowingAction.charId);
-        if (actingChar) {
-            highlightRange(actingChar, foreshadowingAction.skillId);
-        }
-    }
-    else if (roundPhase === 'ENEMY_FORESHADOW') {
-        renderForeshadowRanges();
-    }
-    else {
-        const charForUi = characters.find(c => c.id === selectedCharacterId || c.id === previewCharacterId);
-        if (gameState === 'STARTED' && charForUi) {
-            highlightRange(charForUi, selectedSkill || 'move');
+            turnStatusDiv.textContent = `대기 중`;
+            turnStatusDiv.style.color = 'var(--text-secondary)';
         }
     }
 
     const charForUi = characters.find(c => c.id === selectedCharacterId || c.id === previewCharacterId);
+    if (gameState === 'STARTED' && charForUi) {
+        highlightRange(charForUi, selectedSkill || 'move');
+    }
+
     renderSkillButtons(charForUi);
 
     const adminTurnControls = document.getElementById('admin-turn-controls');
     adminTurnControls.innerHTML = '';
 
-    if (isAdmin && gameState === 'STARTED' && roundPhase === 'PLAYER_PHASE') {
+    if (isAdmin && gameState === 'STARTED' && currentTurnCharId) {
         adminTurnControls.innerHTML = `
-            <button id="admin-end-player-phase-btn" class="w-full bg-yellow-600 hover:bg-yellow-700 text-black p-2 font-bold text-sm rounded-md">
-                ⏭ 아군 턴 강제 종료
+            <button id="admin-force-advance-btn" class="w-full bg-yellow-600 hover:bg-yellow-700 text-black p-2 font-bold text-sm rounded-md">
+                ⏭ 현재 차례 강제 종료
             </button>
         `;
-        document.getElementById('admin-end-player-phase-btn').onclick = async () => {
-            await logAction('⏭ 관리자가 아군 턴을 강제로 종료했습니다.', 'admin');
-            await advanceRoundPhase();
+        document.getElementById('admin-force-advance-btn').onclick = async () => {
+            const activeChar = characters.find(c => c.id === currentTurnCharId);
+            await logAction(`⏭ 관리자가 ${activeChar ? activeChar.name : ''}의 차례를 강제로 종료했습니다.`, 'admin');
+            await completeActorTurn(currentTurnCharId, false);
         };
     }
     updateCharacterList();
     renderLoginStatus();
     renderCharacterSelectionOverlay();
-    renderForeshadowing();
 }
 
     async function removeCharacterPlacement(charId, charName) {
@@ -4117,7 +3584,7 @@ async function resetAllCharacterStats() {
                     mp: charData.maxMentalHp ?? charData.maxMp ?? 50,
                     x: null, y: null,
                     statusEffects: [],
-                    nextAction: deleteField(),
+                    hasActedThisRound: false,
                     isLastFallen: false,
                     totalDamage: 0
                 });
@@ -4132,13 +3599,13 @@ async function resetAllCharacterStats() {
 
     await resetAllCharacterStats();
     await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: {} });
-    await setDoc(doc(db, 'games', gameId), { 
-        gameState: 'PREPARATION', 
-        currentTurnIndex: 0, 
-        currentTurnCharId: null, 
+    await setDoc(doc(db, 'games', gameId), {
+        gameState: 'PREPARATION',
+        currentTurnCharId: null,
+        turnQueue: [],
+        activeExtraUsed: false,
         round: 1,
-        roundPhase: null, 
-        gameResult: deleteField() 
+        gameResult: deleteField()
     }, { merge: true });
 
     await logAction(`⚠️ 관리자가 전체 게임을 초기화했습니다. 모든 캐릭터의 HP가 회복되고 재배치를 기다립니다.`, "admin");
@@ -4211,11 +3678,12 @@ async function resetAllCharacterStats() {
     <div class="grid grid-cols-2 gap-4">
         <button id="set-prep-phase-btn" class="w-full bg-blue-600 p-2">준비 단계로 설정</button>
         <button id="set-start-phase-btn" class="w-full bg-green-600 p-2">게임 시작</button>
-        <button id="force-player-phase-btn" class="w-full bg-green-700 p-2">아군 턴으로 강제 전환</button>
-        <button id="force-enemy-phase-btn" class="w-full bg-red-700 p-2">적군 턴으로 강제 전환</button>
     </div>
     <div class="mt-4 grid grid-cols-2 gap-4">
+        <button id="force-end-round-btn" class="w-full bg-yellow-700 p-2">⏭ 라운드 강제 종료</button>
         <button id="reset-board-pos-btn" class="w-full bg-red-700 p-2">보드 초기화 (미배치)</button>
+    </div>
+    <div class="mt-4">
         <button id="reset-all-game-btn" class="w-full bg-red-900 p-2">⚠️ 전체 게임 재시작</button>
     </div>
             <div class="mt-4 pt-4 border-t border-gray-700">
@@ -4409,18 +3877,19 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
         document.getElementById('close-admin-modal-btn').onclick = () => closeModal('admin-modal');
         document.getElementById('set-prep-phase-btn').onclick = async () => {
             if (gameId) {
-                await updateDoc(doc(db, 'games', gameId), { 
-                    gameState: 'PREPARATION', 
-                    roundPhase: null, 
-                    currentTurnIndex: 0, 
-                    currentTurnCharId: null, 
-                    round: 1 
+                await updateDoc(doc(db, 'games', gameId), {
+                    gameState: 'PREPARATION',
+                    currentTurnCharId: null,
+                    turnQueue: [],
+                    activeExtraUsed: false,
+                    round: 1
                 });
+                gameState = 'PREPARATION';
 
                 const batch = writeBatch(db);
                 characters.forEach(char => {
-                    const charRef = doc(db, 'games', gameId, 'characters', char.id);
-                    batch.update(charRef, { nextAction: deleteField() });
+                    char.hasActedThisRound = false;
+                    batch.update(doc(db, 'games', gameId, 'characters', char.id), { hasActedThisRound: false });
                 });
                 await batch.commit();
 
@@ -4430,33 +3899,26 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
         };
         document.getElementById('set-start-phase-btn').onclick = async () => {
     if (gameId) {
-        await setDoc(doc(db, 'games', gameId), { 
-            gameState: 'STARTED',
-            roundPhase: 'ENEMY_FORESHADOW' 
-        }, { merge: true });
+        await setDoc(doc(db, 'games', gameId), { gameState: 'STARTED' }, { merge: true });
+        gameState = 'STARTED';
 
         const batch = writeBatch(db);
         characters.forEach(char => {
-            const charRef = doc(db, 'games', gameId, 'characters', char.id);
-            batch.update(charRef, { hasActedThisRound: false, nextAction: null });
+            char.hasActedThisRound = false;
+            batch.update(doc(db, 'games', gameId, 'characters', char.id), { hasActedThisRound: false });
         });
         await batch.commit();
-        
-        await logAction(`⚔️ 게임이 시작되었습니다! 라운드 1의 적 행동 예고를 시작합니다.`, "system");
+
+        await logAction(`⚔️ 게임이 시작되었습니다! 속도 순서를 계산합니다.`, "system");
+        closeModal('admin-modal');
+        await startNewRound();
     }
 };
-document.getElementById('force-player-phase-btn').onclick = async () => {
-    if (gameId) {
-        await setDoc(doc(db, 'games', gameId), { roundPhase: 'PLAYER_PHASE' }, { merge: true });
-        await logAction('⚙️ 관리자가 아군 턴으로 강제 전환했습니다.', 'admin');
+document.getElementById('force-end-round-btn').onclick = async () => {
+    if (gameId && gameState === 'STARTED') {
+        await logAction('⏭ 관리자가 현재 라운드를 강제로 종료했습니다.', 'admin');
         closeModal('admin-modal');
-    }
-};
-document.getElementById('force-enemy-phase-btn').onclick = async () => {
-    if (gameId) {
-        await setDoc(doc(db, 'games', gameId), { roundPhase: 'ENEMY_EXECUTION' }, { merge: true });
-        await logAction('⚙️ 관리자가 적군 턴으로 강제 전환했습니다.', 'admin');
-        closeModal('admin-modal');
+        await endRound();
     }
 };
         document.getElementById('save-max-rounds-btn').onclick = async () => {
@@ -4527,7 +3989,8 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
                     updated.appliesEffect = {
                         ...effectInfo,
                         turns: parseInt(document.getElementById(`admin-effect-turns-${id}`).value) || 0,
-                        value: parseFloat(document.getElementById(`admin-effect-value-${id}`).value) || effectInfo.value || 0
+                        value: parseFloat(document.getElementById(`admin-effect-value-${id}`).value) || effectInfo.value || 0,
+                        speedMod: parseFloat(document.getElementById(`admin-effect-speedmod-${id}`).value) || 0
                     };
                 } else {
                     delete updated.appliesEffect;
@@ -4567,7 +4030,8 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
         newSkill.appliesEffect = {
              ...effectInfo,
             turns: parseInt(document.getElementById('new-skill-effect-turns').value) || 0,
-            value: parseFloat(document.getElementById('new-skill-effect-value').value) || effectInfo.value || 0
+            value: parseFloat(document.getElementById('new-skill-effect-value').value) || effectInfo.value || 0,
+            speedMod: parseFloat(document.getElementById('new-skill-effect-speedmod').value) || 0
         };
     }
             if (document.getElementById('new-skill-isResurrect').checked) {
@@ -4651,7 +4115,7 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
             </div>
             <div>
                 <h5 class="font-bold text-sm mb-1 text-cyan-400">상태 이상 효과 설정</h5>
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-4 gap-3">
                     <div class="col-span-1">
                         <label class="block text-xs font-medium text-gray-400">효과 종류</label>
                         <select id="admin-effect-id-${s.id}" class="form-input mt-1 bg-gray-700">
@@ -4670,6 +4134,14 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
                                   title="[약화]: 0~1 사이 값 (예: 0.5 = 50%로 약화)&#10;[강화]: 1보다 큰 값 (예: 1.5 = 150%로 강화)&#10;[지속 피해/회복]: 고정 수치">?</span>
                         </label>
                         <input id="admin-effect-value-${s.id}" type="number" step="0.1" class="form-input mt-1" value="${s.appliesEffect?.value || 0}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-400">
+                            속도 보정치
+                            <span class="inline-block ml-1 text-xs bg-gray-600 text-white rounded-full w-4 h-4 text-center leading-4 cursor-help"
+                                  title="다음 라운드 턴 순서 계산에 반영되는 속도 증감치입니다. 양수면 빨라지고, 음수면 느려집니다.">?</span>
+                        </label>
+                        <input id="admin-effect-speedmod-${s.id}" type="number" step="0.1" class="form-input mt-1" value="${s.appliesEffect?.speedMod || 0}">
                     </div>
                 </div>
             </div>
@@ -4730,7 +4202,7 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
         </div>
         <div class="mt-4 pt-4 border-t border-gray-600">
             <h5 class="font-bold text-md mb-2 text-cyan-400">상태 이상 효과 설정</h5>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-4 gap-3">
                 <div class="col-span-1">
                     <label class="block text-xs font-medium text-gray-400">효과 종류</label>
                     <select id="new-skill-effect-id" class="form-input mt-1 bg-gray-700">
@@ -4745,10 +4217,14 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
                 <div>
                     <label class="block text-xs font-medium text-gray-400">
                         값 (피해/회복/배율)
-                        <span class="inline-block ml-1 text-xs bg-gray-600 text-white rounded-full w-4 h-4 text-center leading-4 cursor-help" 
+                        <span class="inline-block ml-1 text-xs bg-gray-600 text-white rounded-full w-4 h-4 text-center leading-4 cursor-help"
                               title="[약화]: 0~1 사이 값 (예: 0.5 = 50%로 약화)&#10;[강화]: 1보다 큰 값 (예: 1.5 = 150%로 강화)&#10;[지속 피해/회복]: 고정 수치">?</span>
                     </label>
                     <input id="new-skill-effect-value" type="number" step="0.1" class="form-input mt-1">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400">속도 보정치</label>
+                    <input id="new-skill-effect-speedmod" type="number" step="0.1" class="form-input mt-1">
                 </div>
             </div>
         </div>
@@ -4789,23 +4265,13 @@ document.getElementById('force-enemy-phase-btn').onclick = async () => {
     const char = characters.find(c => c.id === charId);
     if (!char || char.bodyHp <= 0) return false;
 
-    if (isAdmin) {
-        if (roundPhase === 'ENEMY_FORESHADOW' && char.type === 'ENEMY') {
-            return true;
-        }
-        if (roundPhase === 'PLAYER_PHASE' && char.type === 'PC' && !char.hasActedThisRound) {
-            return true;
-        }
+    if (isAdmin && isAdminMoveAllowed) return true;
 
-        if (roundPhase === 'ENEMY_EXECUTION' && isAdminMoveAllowed) {
-            return true;
-        }
+    if (char.id === currentTurnCharId && !char.hasActedThisRound) {
+        if (isAdmin && char.type === 'PC') return true;
+        if (loggedInCharId === charId) return true;
     }
 
-    if (roundPhase === 'PLAYER_PHASE' && loggedInCharId === charId && !char.hasActedThisRound) {
-        return true;
-    }
-    
     return false;
 }
 
@@ -4855,178 +4321,70 @@ async function handleCombatClick(e) {
         return cellX >= char.x && cellX < (char.x + size) && cellY >= char.y && cellY < (char.y + size);
     });
 
-    if (roundPhase === 'ENEMY_FORESHADOW' && isAdmin) {
-        // [추가] 디버깅을 위한 로그 출력
-        console.log("--- 행동 예고 클릭 감지 ---");
-        console.log("클릭 전 상태:", { 
-            actor: adminSelectedEnemyId, 
-            skill: adminForeshadowSkillId 
-        });
-        console.log("클릭된 대상:", clickedChar ? clickedChar.name : "빈 칸");
+    const selectedCharacter = characters.find(c => c.id === selectedCharacterId);
 
-        // [수정] 조건문 로직 강화
-        // 1. 행동 주체와 스킬이 모두 선택된 상태에서 캐릭터를 클릭했다면, '대상 지정'으로 판단합니다.
-        if (clickedChar && adminSelectedEnemyId && adminForeshadowSkillId) {
-            console.log("판단: '대상 지정' 로직 실행");
-            const enemy = characters.find(c => c.id === adminSelectedEnemyId);
-            const skill = SKILLS[adminForeshadowSkillId];
-
-            if (enemy && skill) {
-                let isValidTarget = false;
-                if ((skill.category === 'Heal' || skill.category === 'Support') && clickedChar.type === 'ENEMY') {
-                    isValidTarget = true;
-                } else if (skill.category === 'Attack' && clickedChar.type === 'PC') {
-                    isValidTarget = true;
-                }
-
-                if (isValidTarget) {
-                    console.log(`성공: ${enemy.name}의 행동을 ${clickedChar.name} 대상으로 예고합니다.`);
-                    await updateDoc(doc(db, 'games', gameId, 'characters', enemy.id), {
-                        nextAction: { targetId: clickedChar.id, skillId: adminForeshadowSkillId }
-                    });
-                    adminSelectedEnemyId = null;
-                    adminForeshadowSkillId = null;
-                } else {
-                    console.log("실패: 유효하지 않은 대상입니다.");
-                    showCustomModal("잘못된 대상", `[${skill.name}] 스킬을 해당 대상에게 사용할 수 없습니다.`, [{ text: "확인", class: "bg-yellow-600" }]);
-                }
+    if (selectedCharacter) {
+        if (selectedCharActionPhase === 'MOVE') {
+            if (cell.classList.contains('attack-range-move')) {
+                await updateDoc(doc(db, 'games', gameId, 'characters', selectedCharacter.id), { x: cellX, y: cellY });
+                selectedCharActionPhase = 'ACTION';
+                selectedSkill = null;
+                render();
+                return;
             }
-        }
-        // 2. 위의 경우가 아닐 때, 적 캐릭터를 클릭했다면 '행동 주체 선택'으로 판단합니다.
-        else if (clickedChar && clickedChar.type === 'ENEMY') {
-            console.log("판단: '행동 주체 선택' 로직 실행");
-            adminSelectedEnemyId = clickedChar.id;
-            adminForeshadowSkillId = null; // 스킬 선택은 초기화
-        }
-        // 3. 그 외의 경우 (빈 칸 클릭 등)에는 선택을 모두 초기화합니다.
-        else {
-            console.log("판단: 선택 초기화");
-            adminSelectedEnemyId = null;
-            adminForeshadowSkillId = null;
-        }
-        
-        console.log("클릭 후 상태:", { 
-            actor: adminSelectedEnemyId, 
-            skill: adminForeshadowSkillId 
-        });
-        console.log("--------------------------");
-
-        render();
-        return;
-    }
-
-    // ... 이하 나머지 코드는 기존과 동일합니다 ...
-    if (roundPhase === 'ENEMY_EXECUTION' && isAdmin) {
-        const selectedCharacter = characters.find(c => c.id === selectedCharacterId);
-        if (selectedCharacter && !clickedChar && !cell.classList.contains('combat-range')) {
-            if (selectedCharActionPhase === 'ACTION' && preMovePosition) {
-                await updateDoc(doc(db, 'games', gameId, 'characters', selectedCharacter.id), {
-                    x: preMovePosition.x,
-                    y: preMovePosition.y
-                });
-                await logAction(`↩️ ${selectedCharacter.name}의 수동 이동이 취소되었습니다.`, "system");
+            if (clickedChar && clickedChar.id === selectedCharacter.id) {
+                selectedCharActionPhase = 'ACTION';
+                selectedSkill = null;
+                render();
+                return;
             }
             selectedCharacterId = null;
             selectedSkill = null;
             render();
             return;
-        }
-        if (selectedCharacter) {
-            if (selectedCharActionPhase === 'MOVE') {
-                if (cell.classList.contains('attack-range-move')) {
-                    await updateDoc(doc(db, 'games', gameId, 'characters', selectedCharacter.id), { x: cellX, y: cellY });
-                    selectedCharActionPhase = 'ACTION';
-                    selectedSkill = null;
-                    render();
-                }
-            } else if (selectedCharActionPhase === 'ACTION') {
-                if (clickedChar && clickedChar.id === selectedCharacter.id) {
-                    undoMove();
-                    previewCharacterId = null;
-                    return;
-                }
-                const skill = SKILLS[selectedSkill];
-                if (skill) {
-                    await executeSkill(selectedCharacter, (skill.isAoe ? { x: cellX, y: cellY } : clickedChar), selectedSkill);
-                }
+
+        } else if (selectedCharActionPhase === 'ACTION') {
+            if (clickedChar && clickedChar.id === selectedCharacter.id) {
+                undoMove();
+                return;
             }
-            return;
-        }
-        const isActionableEnemy = clickedChar && clickedChar.type === 'ENEMY' && clickedChar.bodyHp > 0 && clickedChar.x !== null;
-        if (isActionableEnemy) {
-            selectedCharacterId = clickedChar.id;
-            selectedCharActionPhase = 'MOVE';
-            selectedSkill = 'move';
-            preMovePosition = { x: clickedChar.x, y: clickedChar.y };
+            const skill = SKILLS[selectedSkill];
+            if (skill && cell.classList.contains('combat-range')) {
+                const result = await executeSkill(selectedCharacter, (skill.isAoe || !clickedChar ? { x: cellX, y: cellY } : clickedChar), selectedSkill);
+                if (result.gameEnded) { render(); return; }
+                await completeActorTurn(selectedCharacter.id, result.bonus);
+                return;
+            }
+            undoMove();
+            selectedCharacterId = null;
+            selectedSkill = null;
             render();
             return;
         }
-        return;
-    }
+    } else {
+        if (clickedChar && clickedChar.bodyHp > 0) {
+            const isMyTurn = clickedChar.id === currentTurnCharId && clickedChar.type === 'PC' && !clickedChar.hasActedThisRound;
+            const canAdminActForPC = isAdmin && isMyTurn;
+            const canPlayerSelect = loggedInCharId === clickedChar.id && isMyTurn;
 
-    if (roundPhase === 'PLAYER_PHASE') {
-        const selectedCharacter = characters.find(c => c.id === selectedCharacterId);
-
-        if (selectedCharacter) {
-            if (selectedCharActionPhase === 'MOVE') {
-                if (cell.classList.contains('attack-range-move')) {
-                    await updateDoc(doc(db, 'games', gameId, 'characters', selectedCharacter.id), { x: cellX, y: cellY });
-                    selectedCharActionPhase = 'ACTION';
-                    selectedSkill = null;
-                    render();
-                    return;
-                }
-                if (clickedChar && clickedChar.id === selectedCharacter.id) {
-                    selectedCharActionPhase = 'ACTION';
-                    selectedSkill = null;
-                    render();
-                    return;
-                }
-                selectedCharacterId = null;
-                selectedSkill = null;
-                render();
-                return;
-
-            } else if (selectedCharActionPhase === 'ACTION') {
-                if (clickedChar && clickedChar.id === selectedCharacter.id) {
-                    undoMove();
-                    return;
-                }
-                const skill = SKILLS[selectedSkill];
-                if (skill && cell.classList.contains('combat-range')) {
-                    await executeSkill(selectedCharacter, (skill.isAoe || !clickedChar ? { x: cellX, y: cellY } : clickedChar), selectedSkill);
-                    return;
-                }
-                undoMove();
-                selectedCharacterId = null;
-                selectedSkill = null;
-                render();
-                return;
-            }
-        } else {
-            if (clickedChar && clickedChar.bodyHp > 0) {
-                const canAdminActForPC = isAdmin && clickedChar.type === 'PC' && !clickedChar.hasActedThisRound;
-                const canPlayerSelect = loggedInCharId === clickedChar.id && clickedChar.type === 'PC' && !clickedChar.hasActedThisRound;
-
-                if (canAdminActForPC || canPlayerSelect) {
-                    selectedCharacterId = clickedChar.id;
-                    selectedCharActionPhase = 'MOVE';
-                    selectedSkill = 'move';
-                    preMovePosition = { x: clickedChar.x, y: clickedChar.y };
-                    previewCharacterId = null;
-                    if (canAdminActForPC) {
-                        await logAction(`👮 관리자가 ${clickedChar.name}의 행동을 대리합니다.`, 'admin');
-                    }
-                } else {
-                    previewCharacterId = clickedChar.id;
-                    selectedCharacterId = null;
+            if (canAdminActForPC || canPlayerSelect) {
+                selectedCharacterId = clickedChar.id;
+                selectedCharActionPhase = 'MOVE';
+                selectedSkill = 'move';
+                preMovePosition = { x: clickedChar.x, y: clickedChar.y };
+                previewCharacterId = null;
+                if (canAdminActForPC) {
+                    await logAction(`👮 관리자가 ${clickedChar.name}의 행동을 대리합니다.`, 'admin');
                 }
             } else {
-                previewCharacterId = null;
+                previewCharacterId = clickedChar.id;
                 selectedCharacterId = null;
             }
-            render();
+        } else {
+            previewCharacterId = null;
+            selectedCharacterId = null;
         }
+        render();
     }
 }
     async function gameBoardClick(e) {
