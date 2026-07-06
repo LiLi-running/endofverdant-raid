@@ -10,76 +10,76 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Noto-Sans-KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #1c1c1b;
-            --bg-secondary: #1c1c1b;
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #212121;
             --bg-tertiary: #374151;
-            --bg-board: rgba(36, 36, 36, 0.5);
-            --border-primary: #D4B783;
+            --bg-board: rgba(26, 26, 26, 0.5);
+            --border-primary: #4ADE80;
             --border-secondary: #4b5563;
-            --text-primary: #EAEAEA;
-            --text-secondary: #B0B0C0;
-            --text-tertiary: #888899;
-            --accent-primary: #D4B783;
-            --accent-secondary: #C1A26C;
+            --text-primary: #F5F5F5;
+            --text-secondary: #C0C0C0;
+            --text-tertiary: #909090;
+            --accent-primary: #4ADE80;
+            --accent-secondary: #22C55E;
             --modal-backdrop: rgba(0, 0, 0, 0.8);
             --log-move: #60A5FA;
             --log-damage: #F87171;
-            --log-heal: #4ADE80; 
+            --log-heal: #4ADE80;
             --log-system: #FBBF24;
             --log-join: #4ADE80;
             --log-admin: #9333ea;
-            --turn-highlight-color: #caa954;
-            --bg-game-id: #1f2937;
-            --bg-selection-overlay: linear-gradient(180deg, var(--bg-primary) 0%, rgba(36, 36, 36, 0.7) 100%);
+            --turn-highlight-color: #4ADE80;
+            --bg-game-id: #262626;
+            --bg-selection-overlay: linear-gradient(180deg, var(--bg-primary) 0%, rgba(26, 26, 26, 0.7) 100%);
             --mp-color: #3B82F6;
-            
+
             --scrollbar-thumb: var(--accent-primary);
             --scrollbar-track: #2d2d2d;
 
-            --skill-ring-color: rgba(212, 183, 131, 0.8);
+            --skill-ring-color: rgba(74, 222, 128, 0.8);
 
-            --turn-box-bg: rgba(55, 65, 81, 0.5); 
+            --turn-box-bg: rgba(55, 65, 81, 0.5);
             --turn-box-border: var(--accent-primary);
-            --summary-box-bg: rgba(212, 183, 131, 0.1);
+            --summary-box-bg: rgba(74, 222, 128, 0.1);
 
-            --gradient-start: #ffffff; 
+            --gradient-start: #ffffff;
             --gradient-end: var(--accent-primary);
             --pc-color: #4ADE80;
             --enemy-color: #F87171;
         }
 
         html.light {
-            --bg-primary: #FDFBF6;
+            --bg-primary: #F5F5F5;
             --bg-secondary: #FFFFFF;
             --bg-tertiary: #E5E7EB;
             --bg-board: rgba(229, 231, 235, 0.8);
-            --border-primary: #8C6A48;
+            --border-primary: #16A34A;
             --border-secondary: #D1D5DB;
-            --text-primary: #3A3226;
-            --text-secondary: #574B3A;
+            --text-primary: #1F2937;
+            --text-secondary: #4B5563;
             --text-tertiary: #6B7280;
-            --accent-primary: #8C6A48;
-            --accent-secondary: #A98A66;
-            --turn-highlight-color: #D97706;
+            --accent-primary: #16A34A;
+            --accent-secondary: #15803D;
+            --turn-highlight-color: #16A34A;
             --log-admin: #6D28D9;
             --bg-game-id: #E5E7EB;
             --bg-selection-overlay: linear-gradient(180deg, var(--bg-primary) 0%, rgba(229, 231, 235, 0.7) 100%);
             --mp-color: #1D4ED8;
 
-            
+
             --scrollbar-thumb: var(--accent-primary);
             --scrollbar-track: #F0F0F0;
 
-            
-            --skill-ring-color: rgba(140, 106, 72, 0.8);
 
-            
-            --turn-box-bg: rgba(229, 231, 235, 0.5); 
+            --skill-ring-color: rgba(22, 163, 74, 0.8);
+
+
+            --turn-box-bg: rgba(229, 231, 235, 0.5);
             --turn-box-border: var(--accent-primary);
-            --summary-box-bg: rgba(140, 106, 72, 0.1);
+            --summary-box-bg: rgba(22, 163, 74, 0.1);
 
-            
-            --gradient-start: #3A3226; 
+
+            --gradient-start: #1F2937;
             --gradient-end: #000000;
             --pc-color: #16A34A;
             --enemy-color: #DC2626;
@@ -1267,6 +1267,13 @@ const combatTextStartTime = new Date();
     corrosion: { id: 'corrosion', name: '잠식 반동' },
     defBuff: { id: 'defBuff', name: '방어 버프' },
     taunted: { id: 'taunted', name: '도발' },
+    stealth: { id: 'stealth', name: '은폐' },
+    sharp: { id: 'sharp', name: '첨예' },
+    hitLock: { id: 'hitLock', name: '명중률 고정' },
+    linkedFate: { id: 'linkedFate', name: '연좌' },
+    guarding: { id: 'guarding', name: '대리 피격 준비' },
+    mentalRot: { id: 'mentalRot', name: '정신 부식', effectType: 'mentalDamage' },
+    confused: { id: 'confused', name: '혼란' },
 };
 
     const STATUS_EFFECT_ICONS = {
@@ -1280,6 +1287,13 @@ const combatTextStartTime = new Date();
     corrosion: '🌑',
     defBuff: '🛡️',
     taunted: '🎯',
+    stealth: '👻',
+    sharp: '💢',
+    hitLock: '🎯',
+    linkedFate: '⛓️',
+    guarding: '🪵',
+    mentalRot: '🩸',
+    confused: '😵',
 };
     
     // NEW: Map/Board State Variables
@@ -1293,11 +1307,11 @@ const combatTextStartTime = new Date();
 
     const DEFAULT_SKILLS = {
         'move': { id: 'move', name: '이동', type: 'Utility', range: 3, rangeShape: 'diamond', multiplier: 0, icon: '🏃', mpCost: 0, category: 'Utility' },
-        '추격': { id: '추격', name: '추격', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 3, icon: '🏃‍♂️', mpCost: 10, category: 'Attack' },
+        '추격': { id: '추격', name: '추격', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 3, icon: '🎯', mpCost: 10, category: 'Attack' },
         '연쇄': { id: '연쇄', name: '연쇄', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 4, icon: '⛓️', mpCost: 15, category: 'Attack' },
         '섬전': { id: '섬전', name: '섬전', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 3, icon: '⚡', mpCost: 15, category: 'Attack' },
         '살상': { id: '살상', name: '살상', type: 'Melee', range: 3, rangeShape: 'diamond', multiplier: 2, icon: '🗡️', mpCost: 30, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond' },
-        '관통': { id: '관통', name: '관통', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '💉', mpCost: 25, category: 'Attack' },
+        '관통': { id: '관통', name: '관통', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🏹', mpCost: 25, category: 'Attack' },
         '의지': { id: '의지', name: '의지', type: 'Melee', range: 3, rangeShape: 'diamond', multiplier: 3, icon: '🔥', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond' },
         '속박': { id: '속박', name: '속박', type: 'Melee', range: 2, rangeShape: 'diamond', multiplier: 3, icon: '🔗', mpCost: 10, category: 'Attack', isAoe: true, aoeRange: 2, aoeShape: 'diamond', appliesEffect: { id: 'rooted', turns: 1 } },
         '지탱': { id: '지탱', name: '지탱', type: 'Defense', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🛡️', mpCost: 10, category: 'Defense' },
@@ -1307,7 +1321,7 @@ const combatTextStartTime = new Date();
         '정착': { id: '정착', name: '정착', type: 'Defense', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '⚓', mpCost: 0, category: 'Defense', appliesEffect: { id: 'anchored', turns: 2 } },
         '매복': { id: '매복', name: '매복', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 4, icon: '🥷', mpCost: 15, category: 'Attack' },
         '암전': { id: '암전', name: '암전', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🌙', mpCost: 10, category: 'Attack', appliesEffect: { id: 'poisoned', turns: 3, value: 10 } },
-        '박탈': { id: '박탈', name: '박탈', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '👁️', mpCost: 10, category: 'Attack' },
+        '박탈': { id: '박탈', name: '박탈', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🔎', mpCost: 10, category: 'Attack' },
         '전이': { id: '전이', name: '전이', type: 'Support', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🔄', mpCost: 20, category: 'Support' },
         '잠식': { id: '잠식', name: '잠식', type: 'Support', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🌑', mpCost: 0, category: 'Support' },
         '포식': { id: '포식', name: '포식', type: 'Support', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🍴', mpCost: 0, category: 'Support' },
@@ -1317,6 +1331,49 @@ const combatTextStartTime = new Date();
         '소생': { id: '소생', name: '소생', type: 'Heal', range: 2, rangeShape: 'diamond', multiplier: 0, icon: '💙', mpCost: 30, category: 'Heal', targetType: 'ALLY' },
         '태동': { id: '태동', name: '태동', type: 'Support', range: 2, rangeShape: 'diamond', multiplier: 0, icon: '🌱', mpCost: 20, category: 'Support', targetType: 'ALLY' },
         '개화': { id: '개화', name: '개화', type: 'Support', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🌸', mpCost: 0, category: 'Special' },
+
+        // ===== 서브 개체 스킬 =====
+        '파편': { id: '파편', name: '파편', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 3, icon: '🔹', mpCost: 0, category: 'Attack' },
+        '균사': { id: '균사', name: '균사', type: 'Ranged', range: 0, rangeShape: 'diamond', multiplier: 2, icon: '🍄', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond', selfTargetAoe: true },
+        '대리': { id: '대리', name: '대리', type: 'Defense', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🪵', mpCost: 0, category: 'Defense' },
+
+        // ===== 야슈체 =====
+        "hats'ik": { id: "hats'ik", name: "hats'ik", type: 'Ranged', range: 0, rangeShape: 'diamond', multiplier: 3, icon: '💥', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond', selfTargetAoe: true },
+        "ch'a'ik ik'": { id: "ch'a'ik ik'", name: "ch'a'ik ik'", type: 'Ranged', range: 3, rangeShape: 'diamond', multiplier: 0, icon: '🩸', mpCost: 0, category: 'Attack' },
+        "k'alik": { id: "k'alik", name: "k'alik", type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🔗', mpCost: 0, category: 'Attack' },
+
+        // ===== 시카모어 =====
+        'ما خفي كان أعظم': { id: 'ما خفي كان أعظم', name: 'ما خفي كان أعظم', type: 'Ranged', range: 0, rangeShape: 'diamond', multiplier: 2, icon: '➖', mpCost: 0, category: 'Attack', isAoe: true, selfTargetAoe: true },
+        'المؤمن مصاب.': { id: 'المؤمن مصاب.', name: 'المؤمن مصاب.', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🧛', mpCost: 0, category: 'Attack' },
+        'يا ما تحت السواهي دواهي.': { id: 'يا ما تحت السواهي دواهي.', name: 'يا ما تحت السواهي دواهي.', type: 'Support', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '👻', mpCost: 0, category: 'Support' },
+
+        // ===== 위그드라실 =====
+        'Urðarbrunnr': { id: 'Urðarbrunnr', name: 'Urðarbrunnr', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🌳', mpCost: 0, category: 'Special', onceOnly: true },
+        'Hvergelmir': { id: 'Hvergelmir', name: 'Hvergelmir', type: 'Ranged', range: 5, rangeShape: 'diamond', multiplier: 0, icon: '💧', mpCost: 0, category: 'Attack' },
+        'Mímisbrunnr': { id: 'Mímisbrunnr', name: 'Mímisbrunnr', type: 'Support', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🌲', mpCost: 0, category: 'Support' },
+
+        // ===== 에게르퇴뢰 파 =====
+        'Turul szárnyai': { id: 'Turul szárnyai', name: 'Turul szárnyai', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🦅', mpCost: 0, category: 'Attack' },
+        'Ördög rosszindulata': { id: 'Ördög rosszindulata', name: 'Ördög rosszindulata', type: 'Ranged', range: 5, rangeShape: 'square', multiplier: 2, icon: '👹', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 1, aoeShape: 'square' },
+        'Bábák varázsa': { id: 'Bábák varázsa', name: 'Bábák varázsa', type: 'Ranged', range: 5, rangeShape: 'diamond', multiplier: 0, icon: '🔄', mpCost: 0, category: 'Attack' },
+
+        // ===== 가오케레나 =====
+        'کینه اهریمن.': { id: 'کینه اهریمن.', name: 'کینه اهریمن.', type: 'Ranged', range: 5, rangeShape: 'diamond', multiplier: 0, icon: '😈', mpCost: 0, category: 'Attack' },
+        'هوم سفید': { id: 'هوم سفید', name: 'هوم سفید', type: 'Ranged', range: 3, rangeShape: 'diamond', multiplier: 0, icon: '☁️', mpCost: 0, category: 'Attack' },
+        'خانه بوروکاشا': { id: 'خانه بوروکاشا', name: 'خانه بوروکاشا', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🏚️', mpCost: 0, category: 'Special' },
+        'لانه سیمرغ': { id: 'لانه سیمرغ', name: 'لانه سیمرغ', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🪺', mpCost: 0, category: 'Special' },
+        'حفاظت از اهورا مزدا': { id: 'حفاظت از اهورا مزدا', name: 'حفاظت از اهورا مزدا', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🛡️', mpCost: 0, category: 'Attack' },
+
+        // ===== 세피로트 =====
+        'אֶהְיֶה אֲשֶׁר אֶהְיֶה': { id: 'אֶהְיֶה אֲשֶׁר אֶהְיֶה', name: 'אֶהְיֶה אֲשֶׁר אֶהְיֶה', type: 'Ranged', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '✡️', mpCost: 0, category: 'Attack' },
+        'נְחֻשְׁתָּן': { id: 'נְחֻשְׁתָּן', name: 'נְחֻשְׁתָּן', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🐍', mpCost: 0, category: 'Attack' },
+        'דָּעַת': { id: 'דָּעַת', name: 'דָּעַת', type: 'Support', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '📖', mpCost: 0, category: 'Support' },
+        'אין': { id: 'אין', name: 'אין', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '👁️', mpCost: 0, category: 'Special' },
+        'סִטְרָא אַחְרָא': { id: 'סִטְרָא אַחְרָא', name: 'סִטְרָא אַחְרָא', type: 'Ranged', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🌑', mpCost: 0, category: 'Attack' },
+        'לְהִתְפַּלֵל': { id: 'לְהִתְפַּלֵל', name: 'לְהִתְפַּלֵל', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '🙏', mpCost: 0, category: 'Special' },
+
+        // ===== 아포칼립스 =====
+        '불완전한 위협': { id: '불완전한 위협', name: '불완전한 위협', type: 'Special', range: 99, rangeShape: 'diamond', multiplier: 0, icon: '💀', mpCost: 0, category: 'Attack' },
     };
     const POSITIONS = {
         '고목': ['지탱', '목갑', '구조', '정착', '의지', '수호'],
@@ -1326,18 +1383,18 @@ const combatTextStartTime = new Date();
     };
     const RAID_ENEMY_CATALOG = {
         subTypes: [
-            { key: 'fragment', label: '녹빛 파편', bodyHp: 60, mentalHp: 0, maxBodyHp: 60, maxMentalHp: 0, speed: 4.5, moveRange: 3, op: 10, defPct: 0, hitPct: 100, skills: ['속박'] },
-            { key: 'spore', label: '떠다니는 균사', bodyHp: 40, mentalHp: 0, maxBodyHp: 40, maxMentalHp: 0, speed: 7.5, moveRange: 4, op: 10, defPct: 0, hitPct: 100, skills: ['살상'] },
-            { key: 'cocoon', label: '질긴 옹이', bodyHp: 200, mentalHp: 0, maxBodyHp: 200, maxMentalHp: 0, speed: 2.5, moveRange: 1, op: 4, defPct: 0, hitPct: 100, skills: [] },
+            { key: 'fragment', label: '녹빛 파편', bodyHp: 60, mentalHp: 0, maxBodyHp: 60, maxMentalHp: 0, speed: 4.5, moveRange: 3, op: 10, defPct: 0, hitPct: 100, skills: ['파편'] },
+            { key: 'spore', label: '떠다니는 균사', bodyHp: 40, mentalHp: 0, maxBodyHp: 40, maxMentalHp: 0, speed: 7.5, moveRange: 4, op: 10, defPct: 0, hitPct: 100, skills: ['균사'], defaultEffects: [{ id: 'stealth', turns: 9999 }] },
+            { key: 'cocoon', label: '질긴 옹이', bodyHp: 200, mentalHp: 0, maxBodyHp: 200, maxMentalHp: 0, speed: 2.5, moveRange: 1, op: 4, defPct: 0, hitPct: 100, skills: ['대리'] },
         ],
         bosses: [
-            { name: '야슈체', bodyHp: 1500, maxBodyHp: 1500, mentalHp: 0, maxMentalHp: 0, speed: 3.5, moveRange: 1, op: 15, defPct: 10, hitPct: 10, skills: [], desc: '파편 3체. 스킬: 범위 밀쳐내기, 내구도 차감, 원거리 속박' },
-            { name: '시카모어', bodyHp: 3000, maxBodyHp: 3000, mentalHp: 0, maxMentalHp: 0, speed: 5.5, moveRange: 2, op: 15, defPct: 15, hitPct: 10, skills: [], desc: '파편 2, 균사 1. 스킬: 가로 광역 혼란, 정신 흡수 회복, 은폐 부여' },
-            { name: '위그드라실', bodyHp: 3500, maxBodyHp: 3500, mentalHp: 0, maxMentalHp: 0, speed: 6.5, moveRange: 0, op: 20, defPct: 20, hitPct: 15, skills: [], desc: '파편 2, 균사 2. 스킬: Urðarbrunnr, Hvergelmir, Mímisbrunnr' },
-            { name: '에게르퇴뢰 파', bodyHp: 5500, maxBodyHp: 5500, mentalHp: 0, maxMentalHp: 0, speed: 7.5, moveRange: 3, op: 30, defPct: 20, hitPct: 20, skills: [], desc: '파편 1, 균사 2, 옹이 1. 스킬: Turul, Ördög, Bábák' },
-            { name: '가오케레나', bodyHp: 7000, maxBodyHp: 7000, mentalHp: 0, maxMentalHp: 0, speed: 8.5, moveRange: 3, op: 30, defPct: 25, hitPct: 25, skills: [], desc: '파편 2, 균사 2, 옹이 1. 5개 스킬' },
-            { name: '세피로트', bodyHp: 10000, maxBodyHp: 10000, mentalHp: 0, maxMentalHp: 0, speed: 9.5, moveRange: 4, op: 40, defPct: 35, hitPct: 30, skills: [], desc: '파편 2, 균사 2, 옹이 2. 6개 스킬. 멤버 사망 시 최대 체력 감소' },
-            { name: '아포칼립스', bodyHp: 99999, maxBodyHp: 99999, mentalHp: 0, maxMentalHp: 0, speed: 1, moveRange: 0, op: 0, defPct: 0, hitPct: 0, skills: [], desc: '무작위 아군 1명의 모든 내구도를 0으로 설정' },
+            { name: '야슈체', bodyHp: 1500, maxBodyHp: 1500, mentalHp: 0, maxMentalHp: 0, speed: 3.5, moveRange: 1, op: 15, defPct: 10, hitPct: 10, skills: ["hats'ik", "ch'a'ik ik'", "k'alik"], desc: '파편 3체. 스킬: 범위 밀쳐내기, 내구도 차감, 원거리 속박' },
+            { name: '시카모어', bodyHp: 3000, maxBodyHp: 3000, mentalHp: 0, maxMentalHp: 0, speed: 5.5, moveRange: 2, op: 15, defPct: 15, hitPct: 10, skills: ['ما خفي كان أعظم', 'المؤمن مصاب.', 'يا ما تحت السواهي دواهي.'], desc: '파편 2, 균사 1. 스킬: 가로 광역 혼란, 정신 흡수 회복, 은폐 부여' },
+            { name: '위그드라실', bodyHp: 3500, maxBodyHp: 3500, mentalHp: 0, maxMentalHp: 0, speed: 6.5, moveRange: 0, op: 20, defPct: 20, hitPct: 15, skills: ['Urðarbrunnr', 'Hvergelmir', 'Mímisbrunnr'], stunImmuneAfterOne: true, desc: '파편 2, 균사 2. 스킬: Urðarbrunnr, Hvergelmir, Mímisbrunnr' },
+            { name: '에게르퇴뢰 파', bodyHp: 5500, maxBodyHp: 5500, mentalHp: 0, maxMentalHp: 0, speed: 7.5, moveRange: 3, op: 30, defPct: 20, hitPct: 20, skills: ['Turul szárnyai', 'Ördög rosszindulata', 'Bábák varázsa'], stunImmune: true, desc: '파편 1, 균사 2, 옹이 1. 스킬: Turul, Ördög, Bábák' },
+            { name: '가오케레나', bodyHp: 7000, maxBodyHp: 7000, mentalHp: 0, maxMentalHp: 0, speed: 8.5, moveRange: 3, op: 30, defPct: 25, hitPct: 25, skills: ['کینه اهریمن.', 'هوم سفید', 'خانه بوروکاشا', 'لانه سیمرغ', 'حفاظت از اهورا مزدا'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 1. 5개 스킬' },
+            { name: '세피로트', bodyHp: 10000, maxBodyHp: 10000, mentalHp: 0, maxMentalHp: 0, speed: 9.5, moveRange: 4, op: 40, defPct: 35, hitPct: 30, skills: ['אֶהְיֶה אֲשֶׁר אֶהְיֶה', 'נְחֻשְׁתָּן', 'דָּעַת', 'אין', 'סִטְרָא אַחְרָא', 'לְהִתְפַּלֵל'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 2. 6개 스킬. 멤버 사망 시 최대 체력 감소' },
+            { name: '아포칼립스', bodyHp: 99999, maxBodyHp: 99999, mentalHp: 0, maxMentalHp: 0, speed: 1, moveRange: 0, op: 0, defPct: 0, hitPct: 0, skills: ['불완전한 위협'], stunImmune: true, desc: '무작위 아군 1명의 모든 내구도를 0으로 설정' },
         ]
     };
     let SKILLS = {};
@@ -1540,6 +1597,8 @@ const loginStatusModal = document.getElementById('login-status-modal');
             if (turnCharId && turnCharId !== previousTurnCharId) {
                 if (isAdmin && currentTurnChar && currentTurnChar.type === 'ENEMY' && currentTurnChar.bodyHp > 0) {
                     setTimeout(() => runEnemyAutoTurn(currentTurnChar), 600);
+                } else if (isAdmin && currentTurnChar && currentTurnChar.type === 'PC' && currentTurnChar.bodyHp > 0 && currentTurnChar.statusEffects?.some(e => e.id === 'confused')) {
+                    setTimeout(() => runConfusedTurn(currentTurnChar), 600);
                 }
             }
             previousTurnCharId = turnCharId;
@@ -1629,6 +1688,42 @@ function listenForCombatTextEvents(gameId) {
         return base + mods;
     }
 
+    // [생장]/[첨예] 등 운용력 증가 상태이상을 반영한 실질 운용력
+    function getEffectiveOp(char) {
+        const base = char.op || 15;
+        const bonus = (char.statusEffects || []).reduce((sum, e) => {
+            if (e.id === 'growth' || e.id === 'sharp') return sum + (e.value || 0);
+            return sum;
+        }, 0);
+        return base + bonus;
+    }
+
+    function isStealthed(c) {
+        return c.statusEffects?.some(e => e.id === 'stealth');
+    }
+
+    // 대상의 이동 가능 칸을 고려해 원점에서 바깥 방향으로 distance칸 밀어냅니다. 막히면 그 자리에서 멈춥니다.
+    async function knockbackCharacter(target, originX, originY, distance) {
+        let dx = target.x - originX;
+        let dy = target.y - originY;
+        const stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+        const stepY = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+        if (stepX === 0 && stepY === 0) return { x: target.x, y: target.y, moved: 0 };
+
+        let curX = target.x, curY = target.y;
+        let moved = 0;
+        for (let i = 0; i < distance; i++) {
+            const nextX = curX + stepX, nextY = curY + stepY;
+            if (!canPlaceCharacter(target, nextX, nextY)) break;
+            curX = nextX; curY = nextY; moved++;
+        }
+        if (moved > 0) {
+            await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { x: curX, y: curY });
+            target.x = curX; target.y = curY;
+        }
+        return { x: curX, y: curY, moved };
+    }
+
     // 아직 행동하지 않은, 살아서 배치된 캐릭터 중 "현재 가장 빠른 속도" 그룹을 반환합니다.
     // 길이가 1이면 그 캐릭터가 바로 행동하고, 2 이상이면 동속도이므로 직접 골라야 합니다.
     function getEligibleActorIds() {
@@ -1700,27 +1795,71 @@ function listenForCombatTextEvents(gameId) {
         if (gameState !== 'STARTED' || !gameId) return;
         currentlyActingEnemyId = null;
 
-        // 아군 정신 내구도 회복 / 자동 부활 (기존 라운드 시작 처리 유지)
+        // 아군 정신 내구도 회복 (전투 불능이 아닌 아군만)
         const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
         if (livingPCs.length > 0) {
             const batch = writeBatch(db);
             for (const pc of livingPCs) {
                 const charRef = doc(db, 'games', gameId, 'characters', pc.id);
-                let updates = {};
                 const newMentalHp = Math.min(pc.maxMentalHp, pc.mentalHp + 10);
-                if (newMentalHp > pc.mentalHp) { updates.mentalHp = newMentalHp; updates.mp = newMentalHp; pc.mentalHp = newMentalHp; pc.mp = newMentalHp; }
-                if (pc.bodyHp <= 0 && pc.mentalHp > pc.maxMentalHp / 10) {
-                    const reviveMentalCost = Math.floor(pc.maxMentalHp / 10);
-                    const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
-                    updates.bodyHp = pc.maxBodyHp; updates.hp = pc.maxBodyHp;
-                    updates.mentalHp = reviveMental; updates.mp = reviveMental;
-                    pc.bodyHp = pc.maxBodyHp; pc.hp = pc.maxBodyHp; pc.mentalHp = reviveMental; pc.mp = reviveMental;
-                    logAction(`💚 ${pc.name}이(가) 자동 부활했습니다! (신체 완전 회복, 정신 -${reviveMentalCost})`, "heal");
+                if (newMentalHp > pc.mentalHp) {
+                    batch.update(charRef, { mentalHp: newMentalHp, mp: newMentalHp });
+                    pc.mentalHp = newMentalHp; pc.mp = newMentalHp;
                 }
-                if (Object.keys(updates).length > 0) { batch.update(charRef, updates); }
             }
             await batch.commit();
-            await logAction(`💙 라운드 시작: 모든 아군 정신 내구도 10 회복.`, "system");
+            await logAction(`💙 라운드 시작: 전투 가능한 아군 정신 내구도 10 회복.`, "system");
+        }
+
+        // 전투 불능(신체 내구도 0)이었던 아군은 다음 라운드에 정신 내구도를 [최대 신체 내구도/10]만큼 차감한 채 최대 신체 내구도로 부활합니다. (적은 해당 없음)
+        const incapacitatedPCs = characters.filter(c => c.type === 'PC' && c.bodyHp <= 0 && c.x !== null);
+        if (incapacitatedPCs.length > 0) {
+            const reviveBatch = writeBatch(db);
+            for (const pc of incapacitatedPCs) {
+                const reviveMentalCost = Math.floor(pc.maxBodyHp / 10);
+                const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
+                const updates = { bodyHp: pc.maxBodyHp, hp: pc.maxBodyHp, mentalHp: reviveMental, mp: reviveMental };
+                pc.bodyHp = pc.maxBodyHp; pc.hp = pc.maxBodyHp; pc.mentalHp = reviveMental; pc.mp = reviveMental;
+                reviveBatch.update(doc(db, 'games', gameId, 'characters', pc.id), updates);
+                await logAction(`💚 ${pc.name}이(가) 자동 부활했습니다! (신체 내구도 완전 회복, 정신 내구도 -${reviveMentalCost})`, "heal");
+            }
+            await reviveBatch.commit();
+        }
+
+        // [אין] 예약된 소환: 사망한 서브 개체 수만큼 녹빛 파편을 소환합니다 (전체 적 최대 7체).
+        const seph = characters.find(c => c.name === '세피로트' && c.type === 'ENEMY' && c.bodyHp > 0 && (c.pendingSummonCount || 0) > 0);
+        if (seph) {
+            const currentEnemyCount = characters.filter(c => c.type === 'ENEMY').length;
+            const spawnCount = Math.max(0, Math.min(seph.pendingSummonCount, 7 - currentEnemyCount));
+            if (spawnCount > 0) {
+                const fragmentTemplate = RAID_ENEMY_CATALOG.subTypes.find(s => s.key === 'fragment');
+                const spawnBatch = writeBatch(db);
+                for (let i = 0; i < spawnCount; i++) {
+                    let spawnX = null, spawnY = null;
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        const candX = Math.min(BOARD_SIZE - 1, Math.max(0, seph.x + Math.floor(Math.random() * 5) - 2));
+                        const candY = Math.min(BOARD_SIZE - 1, Math.max(0, seph.y + Math.floor(Math.random() * 5) - 2));
+                        if (!isCellOccupied(candX, candY)) { spawnX = candX; spawnY = candY; break; }
+                    }
+                    const newFragRef = doc(collection(db, "games", gameId, "characters"));
+                    spawnBatch.set(newFragRef, {
+                        name: fragmentTemplate.label, type: 'ENEMY', imageUrl: '',
+                        bodyHp: fragmentTemplate.bodyHp, maxBodyHp: fragmentTemplate.bodyHp,
+                        mentalHp: 0, maxMentalHp: 0, hp: fragmentTemplate.bodyHp, maxHp: fragmentTemplate.bodyHp, mp: 0, maxMp: 0,
+                        op: fragmentTemplate.op, defPct: fragmentTemplate.defPct ?? 0, hitPct: fragmentTemplate.hitPct ?? 100,
+                        speed: fragmentTemplate.speed, moveRange: fragmentTemplate.moveRange,
+                        size: 1, skills: fragmentTemplate.skills || [],
+                        x: spawnX, y: spawnY, password: '',
+                        isLoggedIn: false, hasActedThisRound: false,
+                        statusEffects: [], isLastFallen: false, totalDamage: 0,
+                        turnOrder: characters.length + 1 + i
+                    });
+                }
+                await spawnBatch.commit();
+                await logAction(`👁️ [אין] 세피로트가 [녹빛 파편] ${spawnCount}체를 소환했습니다!`, "system");
+            }
+            await updateDoc(doc(db, 'games', gameId, 'characters', seph.id), { pendingSummonCount: 0 });
+            seph.pendingSummonCount = 0;
         }
 
         // 생존/배치된 모든 캐릭터의 행동 여부 초기화
@@ -1755,6 +1894,20 @@ function listenForCombatTextEvents(gameId) {
         const livingCharacters = characters.filter(c => c.bodyHp > 0 && c.x !== null);
         const batch = writeBatch(db);
 
+        // [연좌] 정산: 이번 라운드 동안 누적된 피격치(소모 포함)의 1/5을 연결된 대상에게 정신 피해로 적용합니다.
+        for (const char of livingCharacters) {
+            const linkEffect = (char.statusEffects || []).find(e => e.id === 'linkedFate' && e.targetId);
+            if (!linkEffect) continue;
+            const linkedTarget = characters.find(c => c.id === linkEffect.targetId && c.bodyHp > 0 && c.x !== null);
+            if (!linkedTarget) continue;
+            const damageTaken = char.damageTakenThisRound || 0;
+            const transferAmount = Math.floor(damageTaken / 5);
+            if (transferAmount > 0) {
+                const newMentalHp = await updateMentalHP(linkedTarget, -transferAmount);
+                await logAction(`⛓️ [연좌] ${char.name}이(가) 받은 피해(${damageTaken})의 1/5 = ${transferAmount}만큼 ${linkedTarget.name}의 정신 내구도가 감소했습니다! (→ ${newMentalHp})`, "damage");
+            }
+        }
+
         for (const char of livingCharacters) {
             let finalBodyHp = char.bodyHp;
             let hpChanged = false;
@@ -1779,6 +1932,12 @@ function listenForCombatTextEvents(gameId) {
                     finalBodyHp = Math.max(0, finalBodyHp - damageAmount);
                     hpChanged = true;
                     logAction(`☠️ ${char.name}이(가) [${effect.name}] 효과로 **${damageAmount} 피해**를 입었습니다!`, "damage");
+                } else if (effect.effectType === 'mentalDamage') {
+                    const mentalAmount = effect.value || 5;
+                    const newMental = Math.max(0, char.mentalHp - mentalAmount);
+                    char.mentalHp = newMental; char.mp = newMental;
+                    batch.update(doc(db, 'games', gameId, 'characters', char.id), { mentalHp: newMental, mp: newMental });
+                    logAction(`🩸 ${char.name}이(가) [${effect.name}] 효과로 정신 내구도 **${mentalAmount}** 감소! (→ ${newMental})`, "damage");
                 }
             });
 
@@ -1797,9 +1956,10 @@ function listenForCombatTextEvents(gameId) {
                 return acc;
             }, []);
 
-            const updates = { statusEffects: updatedEffects };
+            const updates = { statusEffects: updatedEffects, damageTakenThisRound: 0 };
             if (hpChanged) { updates.bodyHp = finalBodyHp; updates.hp = finalBodyHp; }
             char.statusEffects = updatedEffects;
+            char.damageTakenThisRound = 0;
             if (hpChanged) { char.bodyHp = finalBodyHp; char.hp = finalBodyHp; }
             batch.update(doc(db, 'games', gameId, 'characters', char.id), updates);
         }
@@ -1807,8 +1967,38 @@ function listenForCombatTextEvents(gameId) {
 
         await logAction(`- 라운드 ${round} 종료 -`, "system");
 
-        const isGameOver = await checkGameEndCondition();
+        let isGameOver = await checkGameEndCondition();
         if (isGameOver) return;
+
+        // 정신 내구도가 0인 아군은 라운드 종료 시마다 70% 확률로 [혼란](다음 턴에 아군을 공격) 상태가 됩니다.
+        for (const pc of characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && c.mentalHp <= 0)) {
+            if (Math.random() < 0.7) {
+                await applyStatusEffect(pc, { id: 'confused', turns: 1 }, pc.id);
+            }
+        }
+
+        // [סִטְרָא אַחְרָא] 지정 대상이 이번 라운드에 신체 내구도 0이 되었다면 세피로트에게 라운드 종료 추가행동 권한 부여
+        for (const c of characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.x !== null && c.sephTargetId)) {
+            const sephTarget = characters.find(t => t.id === c.sephTargetId);
+            if (sephTarget && sephTarget.bodyHp <= 0) {
+                await updateDoc(doc(db, 'games', gameId, 'characters', c.id), { pendingRoundEndAction: true, sephTargetId: deleteField() });
+                c.pendingRoundEndAction = true;
+            } else {
+                await updateDoc(doc(db, 'games', gameId, 'characters', c.id), { sephTargetId: deleteField() });
+            }
+            delete c.sephTargetId;
+        }
+
+        // 라운드 종료 시점 조건부 추가행동 (예: 세피로트)
+        const pendingActor = characters.find(c => c.pendingRoundEndAction && c.bodyHp > 0 && c.x !== null);
+        if (pendingActor) {
+            await updateDoc(doc(db, 'games', gameId, 'characters', pendingActor.id), { pendingRoundEndAction: false });
+            pendingActor.pendingRoundEndAction = false;
+            await logAction(`⚡ [라운드 종료 추가행동] ${pendingActor.name}이(가) 한 번 더 행동합니다!`, "system");
+            await runSingleEnemyAction(pendingActor);
+            isGameOver = await checkGameEndCondition();
+            if (isGameOver) return;
+        }
 
         const newRound = round + 1;
         if (maxRounds > 0 && newRound > maxRounds) {
@@ -1831,7 +2021,7 @@ function listenForCombatTextEvents(gameId) {
     }
 
     function findNearestEnemyTarget(enemy) {
-        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null);
+        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         let closest = null, minDist = Infinity;
         livingTargets.forEach(t => {
             const d = getDistance(enemy, t);
@@ -1842,7 +2032,7 @@ function listenForCombatTextEvents(gameId) {
 
     // 광역 스킬 사용 시, 이동 가능 범위 내에서 가장 많은 상대를 타격할 수 있는 목표를 찾습니다.
     function findBestAoeTarget(enemy, skill) {
-        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null);
+        const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         if (livingTargets.length === 0) return null;
         const moveRange = enemy.moveRange !== undefined ? enemy.moveRange : (SKILLS['move']?.range || 1);
 
@@ -1858,8 +2048,110 @@ function listenForCombatTextEvents(gameId) {
         return best;
     }
 
+    // 정신 내구도 0으로 [혼란] 상태가 된 아군의 턴을 자동으로 대신 실행합니다 (아군을 공격).
+    async function runConfusedTurn(pc) {
+        await logAction(`😵 ${pc.name}은(는) [혼란] 상태로 아군을 공격합니다!`, "system");
+        await delay(600);
+
+        const attackSkillId = pc.skills.find(id => SKILLS[id]?.category === 'Attack' && id !== 'move');
+        if (!attackSkillId) {
+            await logAction(`...${pc.name}은(는) 사용할 공격 스킬이 없어 혼란 행동을 종료합니다.`, "system");
+            await completeActorTurn(pc.id, false);
+            return;
+        }
+        const skill = SKILLS[attackSkillId];
+        const allyTargets = characters.filter(c => c.type === 'PC' && c.id !== pc.id && c.bodyHp > 0 && c.x !== null);
+        if (allyTargets.length === 0) {
+            await logAction(`...공격할 아군이 없어 ${pc.name}의 혼란 행동을 종료합니다.`, "system");
+            await completeActorTurn(pc.id, false);
+            return;
+        }
+        const target = allyTargets[Math.floor(Math.random() * allyTargets.length)];
+
+        const moveRange = pc.moveRange !== undefined ? pc.moveRange : (SKILLS['move']?.range || 1);
+        const attackRange = skill.range;
+        let bestMovePos = { x: pc.x, y: pc.y };
+        if (!isAttackPossible(pc, target, attackRange)) {
+            let minDist = Infinity;
+            for (let dy = -moveRange; dy <= moveRange; dy++) {
+                for (let dx = -moveRange; dx <= moveRange; dx++) {
+                    if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
+                    const moveX = pc.x + dx, moveY = pc.y + dy;
+                    if (!canPlaceCharacter(pc, moveX, moveY)) continue;
+                    const phantom = { ...pc, x: moveX, y: moveY };
+                    if (isAttackPossible(phantom, target, attackRange)) {
+                        const d = Math.abs(dx) + Math.abs(dy);
+                        if (d < minDist) { minDist = d; bestMovePos = { x: moveX, y: moveY }; }
+                    }
+                }
+            }
+        }
+        if (bestMovePos.x !== pc.x || bestMovePos.y !== pc.y) {
+            await logAction(`🏃 ${pc.name}이(가) 이동합니다.`, "move");
+            await updateDoc(doc(db, 'games', gameId, 'characters', pc.id), { x: bestMovePos.x, y: bestMovePos.y });
+            pc.x = bestMovePos.x; pc.y = bestMovePos.y;
+            await delay(800);
+        }
+
+        const updatedTarget = characters.find(c => c.id === target.id);
+        if (updatedTarget && updatedTarget.bodyHp > 0 && isAttackPossible(pc, updatedTarget, attackRange)) {
+            await executeSkill(pc, updatedTarget, attackSkillId);
+        } else {
+            await logAction(`...${pc.name}의 공격 범위에 대상이 없습니다.`, "system");
+        }
+        await delay(800);
+        await completeActorTurn(pc.id, false);
+    }
+
     // 적 한 캐릭터의 행동 1회(이동 + 스킬)를 실행하고, 이번 행동으로 추가행동 권한을 얻었는지 반환합니다.
+    // 보스는 보유 스킬을 라운드마다 순환하며 사용합니다 (각 스킬 핸들러가 실제 대상을 자체적으로 계산합니다).
+    async function runBossAction(boss) {
+        const usableSkills = boss.skills.filter(id => {
+            if (!SKILLS[id]) return false;
+            if (SKILLS[id].onceOnly && (boss.onceUsedSkillIds || []).includes(id)) return false;
+            return true;
+        });
+        if (usableSkills.length === 0) {
+            await logAction(`...${boss.name}은(는) 사용할 스킬이 없어 행동을 종료합니다.`, "system");
+            return false;
+        }
+
+        // 가장 가까운 아군을 향해 한 칸씩 접근합니다 (사거리 제약이 있는 스킬을 위한 최소한의 위치 조정).
+        const nearestPc = findNearestEnemyTarget(boss);
+        if (nearestPc && getDistance(boss, nearestPc) > 1) {
+            const moveRange = boss.moveRange !== undefined ? boss.moveRange : (SKILLS['move']?.range || 1);
+            let bestMovePos = { x: boss.x, y: boss.y };
+            let minDist = getDistance(boss, nearestPc);
+            for (let dy = -moveRange; dy <= moveRange; dy++) {
+                for (let dx = -moveRange; dx <= moveRange; dx++) {
+                    if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
+                    const moveX = boss.x + dx, moveY = boss.y + dy;
+                    if (!canPlaceCharacter(boss, moveX, moveY)) continue;
+                    const d = getDistance({ x: moveX, y: moveY }, nearestPc);
+                    if (d < minDist) { minDist = d; bestMovePos = { x: moveX, y: moveY }; }
+                }
+            }
+            if (bestMovePos.x !== boss.x || bestMovePos.y !== boss.y) {
+                await logAction(`🏃 ${boss.name}이(가) 이동합니다.`, "move");
+                await updateDoc(doc(db, 'games', gameId, 'characters', boss.id), { x: bestMovePos.x, y: bestMovePos.y });
+                boss.x = bestMovePos.x; boss.y = bestMovePos.y;
+                await delay(800);
+            }
+        }
+
+        const idx = (round - 1) % usableSkills.length;
+        const skillId = usableSkills[idx];
+        const fallbackTarget = findNearestEnemyTarget(boss) || boss;
+        await delay(600);
+        const result = await executeSkill(boss, fallbackTarget, skillId);
+        await delay(900);
+        return result.bonus;
+    }
+
     async function runSingleEnemyAction(currentEnemy) {
+        if (currentEnemy.isBoss) {
+            return await runBossAction(currentEnemy);
+        }
         const healSkillId = currentEnemy.skills.find(id => SKILLS[id]?.category === 'Heal');
         if (healSkillId) {
             const healSkill = SKILLS[healSkillId];
@@ -1883,7 +2175,7 @@ function listenForCombatTextEvents(gameId) {
         }
         const skill = SKILLS[attackSkillId];
 
-        let target = findTauntTarget(currentEnemy);
+        let target = skill.selfTargetAoe ? currentEnemy : findTauntTarget(currentEnemy);
         if (!target) {
             target = skill.isAoe ? findBestAoeTarget(currentEnemy, skill) : findNearestEnemyTarget(currentEnemy);
         }
@@ -2054,12 +2346,26 @@ function isAttackPossible(attacker, target, attackRange) {
 
     async function updateBodyHP(char, amount, logType) {
         const newHp = Math.min(char.maxBodyHp, Math.max(0, char.bodyHp + amount));
-        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { bodyHp: newHp, hp: newHp });
+        const updates = { bodyHp: newHp, hp: newHp };
+        char.bodyHp = newHp; char.hp = newHp;
+        if (amount < 0) {
+            const taken = (char.damageTakenThisRound || 0) + Math.abs(amount);
+            updates.damageTakenThisRound = taken;
+            char.damageTakenThisRound = taken;
+        }
+        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), updates);
         return newHp;
     }
     async function updateMentalHP(char, amount) {
         const newMp = Math.min(char.maxMentalHp, Math.max(0, char.mentalHp + amount));
-        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { mentalHp: newMp, mp: newMp });
+        const updates = { mentalHp: newMp, mp: newMp };
+        char.mentalHp = newMp; char.mp = newMp;
+        if (amount < 0) {
+            const taken = (char.damageTakenThisRound || 0) + Math.abs(amount);
+            updates.damageTakenThisRound = taken;
+            char.damageTakenThisRound = taken;
+        }
+        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), updates);
         return newMp;
     }
     // Keep old aliases for compatibility
@@ -2127,7 +2433,7 @@ function isAttackPossible(attacker, target, attackRange) {
         setTimeout(() => defenderToken.classList.remove('hit-animation', 'show-hit-overlay'), 1000);
     }
 
-    const attackerOp = attacker.op || 15;
+    const attackerOp = getEffectiveOp(attacker);
     const rawDamage = Math.round(attackerOp * (skill.multiplier || 1));
 
     const isAoeSkill = skill.isAoe;
@@ -2185,6 +2491,129 @@ function isAttackPossible(attacker, target, attackRange) {
     const skill = SKILLS[skillId];
     if (!skill) return false;
 
+    // 대리: 질긴 옹이가 보스 대신 맞을 준비 (실제 대상 변경은 관리자가 수동으로 처리)
+    if (skillId === '대리') {
+        const guardEffect = { id: 'guarding', name: '대리 피격 준비', turnsRemaining: 99, isNew: true };
+        const currentEffects1 = (caster.statusEffects || []).filter(e => e.id !== 'guarding');
+        await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { statusEffects: [...currentEffects1, guardEffect] });
+        await logAction(`🪵 [대리] ${caster.name}: 보스에게 가해지는 단일 공격을 대신 맞을 준비를 합니다. (해당 공격 발생 시 관리자가 대상을 ${caster.name}(으)로 수동 변경해주세요)`, "system");
+        return true;
+    }
+
+    // 시카모어 - 은신 부여: 자신 + 지정 서브 개체(균사 우선)에게 은폐, 나머지는 첨예
+    if (skillId === 'يا ما تحت السواهي دواهي.') {
+        const subEntities = characters.filter(c => c.type === caster.type && c.id !== caster.id && c.bodyHp > 0 && c.x !== null && !c.isBoss);
+        const chosenSub = subEntities.find(c => c.name === '떠다니는 균사') || subEntities[0] || null;
+        await applyStatusEffect(caster, { id: 'stealth', turns: 1 }, caster.id);
+        if (chosenSub) await applyStatusEffect(chosenSub, { id: 'stealth', turns: 1 }, caster.id);
+        const others = subEntities.filter(c => !chosenSub || c.id !== chosenSub.id);
+        for (const o of others) { await applyStatusEffect(o, { id: 'sharp', turns: 1, value: 2 }, caster.id); }
+        await logAction(`👻 ${caster.name}: 자신과 ${chosenSub ? chosenSub.name : '(대상 없음)'}에게 [은폐] 부여, 나머지 서브 개체에게 [첨예](운용력+2) 부여!`, "system");
+        return true;
+    }
+
+    // 위그드라실 - Urðarbrunnr: 레이드 내 1회, 무작위 고목-덤불을 [연좌]로 연결 (해제 불가)
+    if (skillId === 'Urðarbrunnr') {
+        if ((caster.onceUsedSkillIds || []).includes(skillId)) {
+            await logAction(`⚠️ [Urðarbrunnr] 이미 레이드 내에서 사용되었습니다.`, "system");
+            return false;
+        }
+        const gomokPCs = characters.filter(c => c.type === 'PC' && c.position === '고목' && c.bodyHp > 0 && c.x !== null);
+        const deombulPCs = characters.filter(c => c.type === 'PC' && c.position === '덤불' && c.bodyHp > 0 && c.x !== null);
+        if (gomokPCs.length === 0 || deombulPCs.length === 0) {
+            await logAction(`⚠️ [Urðarbrunnr] 고목 또는 덤불 포지션 아군이 없어 사용할 수 없습니다.`, "system");
+            return false;
+        }
+        const gomok = gomokPCs[Math.floor(Math.random() * gomokPCs.length)];
+        const deombul = deombulPCs[Math.floor(Math.random() * deombulPCs.length)];
+        await applyStatusEffect(gomok, { id: 'linkedFate', turns: 9999, targetId: deombul.id }, caster.id);
+        const usedIds = [...(caster.onceUsedSkillIds || []), skillId];
+        await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { onceUsedSkillIds: usedIds });
+        caster.onceUsedSkillIds = usedIds;
+        await logAction(`🌳 [Urðarbrunnr] ${caster.name}: ${gomok.name}(고목)과 ${deombul.name}(덤불)을 [연좌]로 연결했습니다! (해제 불가, 1회 사용)`, "system");
+        return true;
+    }
+
+    // 위그드라실 - Mímisbrunnr: 자신 [목질], 서브 개체 전체 [첨예]
+    if (skillId === 'Mímisbrunnr') {
+        const woodEffect = { id: 'defBuff', name: '목질', turnsRemaining: 1, value: 50, isNew: true };
+        const casterEffects = (caster.statusEffects || []).filter(e => e.id !== 'defBuff');
+        await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { statusEffects: [...casterEffects, woodEffect] });
+        const subs = characters.filter(c => c.type === caster.type && c.id !== caster.id && c.bodyHp > 0 && c.x !== null && !c.isBoss);
+        for (const s of subs) { await applyStatusEffect(s, { id: 'sharp', turns: 1, value: 2 }, caster.id); }
+        await logAction(`🌲 [Mímisbrunnr] ${caster.name}: 자신에게 [목질](방어 +50%, 1라운드) 부여, 모든 서브 개체에게 [첨예](운용력+2) 부여!`, "system");
+        return true;
+    }
+
+    // 가오케레나 - خانه بوروکاشا: 아군 전체 정신 50 감소, 저잔량자 수만큼 운용력 영구 상승
+    if (skillId === 'خانه بوروکاشا') {
+        const livingPCsA = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+        let countLow = 0;
+        for (const pc of livingPCsA) {
+            const newMental = await updateMentalHP(pc, -50);
+            if (newMental <= 50) countLow++;
+        }
+        if (countLow > 0) {
+            const newOp = (caster.op || 15) + countLow * 2;
+            await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { op: newOp });
+            caster.op = newOp;
+        }
+        await logAction(`🏚️ [خانه بوروکاشا] ${caster.name}: 모든 아군 정신 내구도 50 감소! 정신 내구도 50 이하 ${countLow}명 기준 운용력 영구 +${countLow * 2} (→${caster.op}).`, "damage");
+        return true;
+    }
+
+    // 가오케레나 - لانه سیمرغ: 최원거리 아군 정신 10으로 설정, 5마스 내 전원 명중률 1% 고정
+    if (skillId === 'لانه سیمرغ') {
+        const livingPCsB = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+        if (livingPCsB.length > 0) {
+            const farthestPC = [...livingPCsB].sort((a, b) => getDistance(caster, b) - getDistance(caster, a))[0];
+            await updateDoc(doc(db, 'games', gameId, 'characters', farthestPC.id), { mentalHp: 10, mp: 10 });
+            farthestPC.mentalHp = 10; farthestPC.mp = 10;
+            await logAction(`🪺 [لانه سیمرغ] ${caster.name}: 가장 멀리 있는 ${farthestPC.name}의 정신 내구도를 10으로 설정!`, "damage");
+        }
+        const nearby = characters.filter(c => c.bodyHp > 0 && c.x !== null && getDistance(caster, c) <= 5);
+        for (const c of nearby) { await applyStatusEffect(c, { id: 'hitLock', turns: 1, value: 1 }, caster.id); }
+        await logAction(`🪺 [لانه سیمرغ] 주변 5마스 내 모든 캐릭터의 명중률이 이번 라운드 1%로 고정됩니다.`, "system");
+        return true;
+    }
+
+    // 세피로트 - דָּעַת: 명중률 증가 자기 버프 (명중 시 아군 전체 정신 20 감소 후 해제, executeSkill 명중 처리부에서 트리거)
+    if (skillId === 'דָּעַת') {
+        const nearbyAllyCount = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && getDistance(caster, c) <= 3).length;
+        const boostedHit = Math.min(100, (caster.hitPct || 80) + nearbyAllyCount * 5);
+        const effects2 = (caster.statusEffects || []).filter(e => e.id !== 'hitLock');
+        const daatEffect = { id: 'hitLock', name: '명중률 고정', turnsRemaining: 99, value: boostedHit, isNew: true, daatBuff: true };
+        await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { statusEffects: [...effects2, daatEffect] });
+        await logAction(`📖 [דָּעַת] ${caster.name}: 명중률이 ${boostedHit}%로 증가합니다! (명중 시 아군 전체 정신 20 감소 후 원래대로 복귀)`, "system");
+        return true;
+    }
+
+    // 세피로트 - אין: 사망한 서브 개체 수만큼 다음 라운드 [녹빛 파편] 소환 예약
+    if (skillId === 'אין') {
+        const deadSubs = characters.filter(c => c.type === 'ENEMY' && !c.isBoss && c.bodyHp <= 0).length;
+        if (deadSubs > 0) {
+            const newCount = (caster.pendingSummonCount || 0) + deadSubs;
+            await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { pendingSummonCount: newCount });
+            caster.pendingSummonCount = newCount;
+            await logAction(`👁️ [אין] ${caster.name}: 사망한 서브 개체 ${deadSubs}체만큼 다음 라운드에 [녹빛 파편]을 소환합니다. (전체 적 최대 7체)`, "system");
+        } else {
+            await logAction(`👁️ [אין] ${caster.name}: 사망한 서브 개체가 없어 소환하지 않습니다.`, "system");
+        }
+        return true;
+    }
+
+    // 세피로트 - לְהִתְפַּלֵל: 다른 세피로트 스킬 중 하나를 무작위로 대신 사용
+    if (skillId === 'לְהִתְפַּלֵל') {
+        const sephPool = ['אֶהְיֶה אֲשֶׁר אֶהְיֶה', 'נְחֻשְׁתָּן', 'דָּעַת', 'אין', 'סִטְרָא אַחְרָא'];
+        const available = sephPool.filter(id => caster.skills.includes(id));
+        if (available.length === 0) { await logAction(`⚠️ [לְהִתְפַּלֵל] 사용할 스킬이 없습니다.`, "system"); return false; }
+        const chosenSkillId = available[Math.floor(Math.random() * available.length)];
+        await logAction(`🙏 [לְהִתְפַּלֵל] ${caster.name}: [${chosenSkillId}]을(를) 대신 사용합니다!`, "system");
+        const fallbackTarget = characters.find(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null) || caster;
+        await executeSkill(caster, fallbackTarget, chosenSkillId);
+        return true;
+    }
+
     // 개화: all allies full restore, self bodyHp→1
     if (skillId === '개화') {
         const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
@@ -2214,7 +2643,7 @@ function isAttackPossible(attacker, target, attackRange) {
 
     // 정화: op × multiplier mental heal for all allies
     if (skillId === '정화') {
-        const healAmt = Math.round((caster.op || 15) * (skill.multiplier || 1));
+        const healAmt = Math.round(getEffectiveOp(caster) * (skill.multiplier || 1));
         if (skill.mpCost > 0) await updateMentalHP(caster, -skill.mpCost);
         const livingPCs = characters.filter(c => c.type === 'PC' && c.x !== null);
         for (const pc of livingPCs) {
@@ -2248,7 +2677,7 @@ function isAttackPossible(attacker, target, attackRange) {
             await logAction(`⚠️ 유효한 대상이 없습니다.`, "system");
             return false;
         }
-        const healAmt = Math.round((caster.op || 15) * (skill.multiplier || 3));
+        const healAmt = Math.round(getEffectiveOp(caster) * (skill.multiplier || 3));
         const newBodyHp = await updateBodyHP(target, healAmt, "heal");
         const targetToken = document.querySelector(`.character-token[data-char-id="${target.id}"]`);
         if (targetToken) { targetToken.classList.add('heal-animation', 'show-heal-overlay'); setTimeout(() => targetToken.classList.remove('heal-animation', 'show-heal-overlay'), 1000); }
@@ -2261,7 +2690,7 @@ function isAttackPossible(attacker, target, attackRange) {
     if (skillId === '순환') {
         if (skill.mpCost > 0) await updateMentalHP(caster, -skill.mpCost);
         if (!target || target.bodyHp <= 0) { await logAction(`⚠️ 유효한 대상이 없습니다.`, "system"); return false; }
-        const regenAmt = caster.op || 15;
+        const regenAmt = getEffectiveOp(caster);
         const regenEffect = { id: 'regenerating', name: '재생', turnsRemaining: 3, value: regenAmt, effectType: 'heal', isNew: true };
         const currentEffects = (target.statusEffects || []).filter(e => e.id !== 'regenerating');
         await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { statusEffects: [...currentEffects, regenEffect] });
@@ -2336,6 +2765,22 @@ function isAttackPossible(attacker, target, attackRange) {
 async function applyStatusEffect(target, effectInfo, casterId = null) {
     if (!target || !effectInfo || !effectInfo.id || !PREDEFINED_EFFECTS[effectInfo.id]) return;
 
+    // 기절 면역 처리 (전이 등 어떤 경로로 기절을 부여하려 해도 여기서 공통으로 걸러집니다)
+    if (effectInfo.id === 'stunned') {
+        if (target.stunImmune) {
+            await logAction(`🛡️ ${target.name}은(는) [기절] 면역이라 효과가 적용되지 않습니다.`, "system");
+            return;
+        }
+        if (target.stunImmuneAfterOne) {
+            if (target.stunUsedOnce) {
+                await logAction(`🛡️ ${target.name}은(는) 이미 한 번 기절한 뒤로 [기절] 면역 상태입니다.`, "system");
+                return;
+            }
+            await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { stunUsedOnce: true });
+            target.stunUsedOnce = true;
+        }
+    }
+
     const baseEffect = PREDEFINED_EFFECTS[effectInfo.id];
 
     const newEffect = {
@@ -2349,6 +2794,9 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     }
     if (effectInfo.speedMod !== undefined) {
         newEffect.speedMod = effectInfo.speedMod;
+    }
+    if (effectInfo.targetId !== undefined) {
+        newEffect.targetId = effectInfo.targetId;
     }
     if (newEffect.id === 'taunted' && casterId) {
         newEffect.casterId = casterId;
@@ -2438,8 +2886,19 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     let affectedTargets = [];
 
     if (skill.category === 'Attack') {
-        if (target.type === attacker.type) {
+        const isConfused = attacker.statusEffects?.some(e => e.id === 'confused');
+        if (target.type === attacker.type && !isConfused) {
             await logAction(`⚠️ ${attacker.name}은(는) 아군에게 공격할 수 없습니다.`, "system");
+            return { success: false, bonus: false };
+        }
+        if (target.type !== attacker.type && isConfused) {
+            await logAction(`⚠️ ${attacker.name}은(는) [혼란] 상태이므로 아군만 공격할 수 있습니다.`, "system");
+            return { success: false, bonus: false };
+        }
+
+        // 은폐: 단일 대상 공격은 은폐 상태인 대상을 지정할 수 없음
+        if (!skill.isAoe && target.type && isStealthed(target)) {
+            await logAction(`⚠️ ${target.name}은(는) [은폐] 상태이므로 지정할 수 없습니다.`, "system");
             return { success: false, bonus: false };
         }
 
@@ -2460,9 +2919,237 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             return { success: true, bonus: false, gameEnded: penetrateGameOver };
         }
 
+        // ===== 보스/서브 개체 전용 스킬 (대상은 스킬 자체가 재계산) =====
+        if (skillId === "hats'ik") {
+            const targets = findTargetsInAoe(attacker.x, attacker.y, skill.aoeRange, skill.aoeShape, skill.type, attacker.type);
+            if (targets.length === 0) { await logAction(`⚠️ [hats'ik] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const dmg = Math.round(getEffectiveOp(attacker) * 3);
+            for (const t of targets) {
+                await updateBodyHP(t, -dmg, "damage");
+                await knockbackCharacter(t, attacker.x, attacker.y, 2);
+            }
+            await logAction(`💥 [hats'ik] ${attacker.name}: 주변 3마스 아군 ${targets.map(t => t.name).join(', ')}에게 ${dmg} 피해 및 2마스 밀쳐내기!`, "damage");
+            const ge1 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge1 };
+        }
+
+        if (skillId === "ch'a'ik ik'") {
+            const candidates = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 3);
+            if (candidates.length === 0) { await logAction(`⚠️ [ch'a'ik ik'] 3마스 내 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            await updateBodyHP(chosen, -20, "damage");
+            await updateMentalHP(chosen, -10);
+            await logAction(`🩸 [ch'a'ik ik'] ${attacker.name}: ${chosen.name}의 신체 내구도 20, 정신 내구도 10 감소!`, "damage");
+            const ge2 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge2 };
+        }
+
+        if (skillId === "k'alik") {
+            const livingPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            const farthest = [...livingPCs1].sort((a, b) => getDistance(attacker, b) - getDistance(attacker, a)).slice(0, 2);
+            if (farthest.length === 0) { await logAction(`⚠️ [k'alik] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            for (const t of farthest) { await applyStatusEffect(t, { id: 'rooted', turns: 1 }, attacker.id); }
+            await logAction(`🔗 [k'alik] ${attacker.name}: 가장 멀리 있는 아군 ${farthest.map(t => t.name).join(', ')}에게 [속박] 부여!`, "system");
+            return { success: true, bonus: false };
+        }
+
+        if (skillId === 'ما خفي كان أعظم') {
+            const rows = [attacker.y, attacker.y + 1].filter(y => y >= 0 && y < BOARD_SIZE);
+            const targets = characters.filter(c => c.type !== attacker.type && c.bodyHp > 0 && c.x !== null && rows.includes(c.y) && !isStealthed(c));
+            if (targets.length === 0) { await logAction(`⚠️ [가로 광역] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const dmg2 = Math.round(getEffectiveOp(attacker) * 2);
+            for (const t of targets) {
+                await updateBodyHP(t, -dmg2, "damage");
+                await applyStatusEffect(t, { id: 'mentalRot', turns: 3, value: 5 }, attacker.id);
+            }
+            await logAction(`➖ [가로 광역] ${attacker.name}: ${targets.map(t => t.name).join(', ')}에게 ${dmg2} 피해 및 3라운드간 정신 5 감소 효과 부여!`, "damage");
+            const ge3 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge3 };
+        }
+
+        if (skillId === 'المؤمن مصاب.') {
+            const adjacent = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 1);
+            if (adjacent.length === 0) { await logAction(`⚠️ 인접한 아군이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen2 = adjacent[0];
+            await updateMentalHP(chosen2, -40);
+            await updateBodyHP(attacker, 20, "heal");
+            await logAction(`🧛 ${attacker.name}: ${chosen2.name}의 정신 내구도 40 흡수, 자신의 신체 내구도 20 회복!`, "damage");
+            return { success: true, bonus: false };
+        }
+
+        if (skillId === 'Hvergelmir') {
+            const candidates2 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 5);
+            if (candidates2.length === 0) { await logAction(`⚠️ [Hvergelmir] 5마스 내 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen3 = candidates2[Math.floor(Math.random() * candidates2.length)];
+            const dmg3 = Math.round(getEffectiveOp(attacker) * 3);
+            await updateBodyHP(chosen3, -dmg3, "damage");
+            await updateMentalHP(chosen3, -15);
+            await logAction(`💧 [Hvergelmir] ${attacker.name}: ${chosen3.name}의 신체 내구도 ${dmg3}, 정신 내구도 15 감소!`, "damage");
+            const ge4 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge4 };
+        }
+
+        if (skillId === 'Turul szárnyai') {
+            const allEnemies1 = characters.filter(c => c.type === attacker.type && c.bodyHp > 0 && c.x !== null);
+            const hitTargets = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && allEnemies1.some(en => getDistance(en, c) <= 1));
+            if (hitTargets.length === 0) { await logAction(`⚠️ [Turul szárnyai] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            for (const t of hitTargets) { await updateMentalHP(t, -30); }
+            await logAction(`🦅 [Turul szárnyai] 적 인근 1마스 내 아군 ${hitTargets.map(t => t.name).join(', ')}의 정신 내구도 30 감소!`, "damage");
+            return { success: true, bonus: false };
+        }
+
+        if (skillId === 'Ördög rosszindulata') {
+            const bestCenter = findBestAoeTarget(attacker, skill);
+            if (!bestCenter) { await logAction(`⚠️ [Ördög rosszindulata] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const targets2 = findTargetsInAoe(bestCenter.x, bestCenter.y, skill.aoeRange, skill.aoeShape, skill.type, attacker.type);
+            const dmg4 = Math.round(getEffectiveOp(attacker) * 2);
+            for (const t of targets2) {
+                await updateBodyHP(t, -dmg4, "damage");
+                if (Math.random() < 0.5) await applyStatusEffect(t, { id: 'stunned', turns: 1 }, attacker.id);
+            }
+            await logAction(`👹 [Ördög rosszindulata] ${attacker.name}: (${bestCenter.x},${bestCenter.y}) 중심 3x3 범위에 ${dmg4} 피해! (50% 확률 기절)`, "damage");
+            const ge5 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge5 };
+        }
+
+        if (skillId === 'Bábák varázsa') {
+            const candidates3 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 5);
+            if (candidates3.length === 0) { await logAction(`⚠️ [Bábák varázsa] 5마스 내 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen4 = candidates3[Math.floor(Math.random() * candidates3.length)];
+            const dmg5 = Math.round(getEffectiveOp(attacker) * 3);
+            await updateBodyHP(chosen4, -dmg5, "damage");
+            await updateMentalHP(chosen4, -30);
+            const livingPCs2 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            const swapWith = [...livingPCs2].sort((a, b) => a.mentalHp - b.mentalHp).find(c => c.id !== chosen4.id);
+            let msg1 = `🔄 [Bábák varázsa] ${attacker.name}: ${chosen4.name}에게 ${dmg5} 피해, 정신 내구도 30 감소.`;
+            if (swapWith) {
+                const chosenPos = { x: chosen4.x, y: chosen4.y };
+                const swapPos = { x: swapWith.x, y: swapWith.y };
+                await updateDoc(doc(db, 'games', gameId, 'characters', chosen4.id), { x: swapPos.x, y: swapPos.y });
+                await updateDoc(doc(db, 'games', gameId, 'characters', swapWith.id), { x: chosenPos.x, y: chosenPos.y });
+                chosen4.x = swapPos.x; chosen4.y = swapPos.y;
+                swapWith.x = chosenPos.x; swapWith.y = chosenPos.y;
+                msg1 += ` ${chosen4.name}과(와) ${swapWith.name}의 위치를 교환!`;
+            }
+            await logAction(msg1, "damage");
+            const ge6 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge6 };
+        }
+
+        if (skillId === 'کینه اهریمن.') {
+            const candidates4 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 5);
+            if (candidates4.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen5 = candidates4[Math.floor(Math.random() * candidates4.length)];
+            const op1 = getEffectiveOp(attacker);
+            await updateBodyHP(chosen5, -Math.round(op1 * 3), "damage");
+            await updateMentalHP(chosen5, -Math.round(op1 * 1));
+            await applyStatusEffect(chosen5, { id: 'cursed', turns: 2 }, attacker.id);
+            await logAction(`😈 ${attacker.name}: ${chosen5.name}에게 신체 ${Math.round(op1 * 3)}, 정신 ${Math.round(op1)} 피해 및 [저주] 부여!`, "damage");
+            const ge7 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge7 };
+        }
+
+        if (skillId === 'هوم سفید') {
+            const candidates5 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c) && getDistance(attacker, c) <= 3);
+            if (candidates5.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen6 = candidates5[Math.floor(Math.random() * candidates5.length)];
+            const op2 = getEffectiveOp(attacker);
+            const dmg6 = Math.round(op2 * 4);
+            await updateBodyHP(chosen6, -dmg6, "damage");
+            let msg2 = `☁️ ${attacker.name}: ${chosen6.name}에게 신체 ${dmg6} 피해!`;
+            if (dmg6 >= 60) {
+                await updateMentalHP(chosen6, -50);
+                const allPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+                for (const pc of allPCs1) {
+                    await updateBodyHP(pc, -op2, "damage");
+                    await updateMentalHP(pc, -op2);
+                }
+                msg2 += ` 피해 60 이상! ${chosen6.name} 정신 50 추가 감소, 아군 전체 신체·정신 ${op2} 피해!`;
+            }
+            await logAction(msg2, "damage");
+            const ge8 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge8 };
+        }
+
+        if (skillId === 'حفاظت از اهورا مزدا') {
+            const allEnemies2 = characters.filter(c => c.type === attacker.type && c.bodyHp > 0 && c.x !== null);
+            const op3 = getEffectiveOp(attacker);
+            const affected = [];
+            for (const pc of characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c))) {
+                let nearest = null, nearestDist = Infinity;
+                allEnemies2.forEach(en => { const d = getDistance(en, pc); if (d <= 1 && d < nearestDist) { nearest = en; nearestDist = d; } });
+                if (nearest) affected.push({ pc, source: nearest });
+            }
+            if (affected.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            for (const { pc, source } of affected) {
+                await updateBodyHP(pc, -Math.round(op3 * 2), "damage");
+                await updateMentalHP(pc, -op3);
+                await knockbackCharacter(pc, source.x, source.y, 3);
+            }
+            await logAction(`🛡️ [حفاظت از اهورا مزدا] 적에 인접한 아군 ${affected.map(a => a.pc.name).join(', ')}에게 피해 및 3마스 밀쳐내기!`, "damage");
+            const ge9 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge9 };
+        }
+
+        if (skillId === 'אֶהְיֶה אֲשֶׁר אֶהְיֶה') {
+            const livingPCs3 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
+            if (livingPCs3.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen7 = livingPCs3[Math.floor(Math.random() * livingPCs3.length)];
+            const mentalCut = Math.floor(chosen7.mentalHp * 0.4);
+            const newMental1 = await updateMentalHP(chosen7, -mentalCut);
+            await updateBodyHP(chosen7, -mentalCut * 2, "damage");
+            let msg3 = `✡️ ${attacker.name}: ${chosen7.name}의 정신 내구도 ${mentalCut} 감소(→${newMental1}), 신체 내구도 ${mentalCut * 2} 피해!`;
+            if (newMental1 <= 50) {
+                await applyStatusEffect(chosen7, { id: 'stunned', turns: 1 }, attacker.id);
+                msg3 += ` 정신 내구도 50 이하로 [기절]!`;
+            }
+            await logAction(msg3, "damage");
+            const ge10 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge10 };
+        }
+
+        if (skillId === 'נְחֻשְׁתָּן') {
+            const livingPCs4 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            if (livingPCs4.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const op4 = getEffectiveOp(attacker);
+            const dmgEach = Math.round(op4 * 3);
+            let totalDmg = 0;
+            for (const pc of livingPCs4) { await updateBodyHP(pc, -dmgEach, "damage"); totalDmg += dmgEach; }
+            const mentalDmg1 = Math.floor(totalDmg / 10);
+            const single1 = livingPCs4[Math.floor(Math.random() * livingPCs4.length)];
+            await updateMentalHP(single1, -mentalDmg1);
+            await logAction(`🐍 [נְחֻשְׁתָּן] ${attacker.name}: 아군 전체 신체 ${dmgEach} 피해! ${single1.name}의 정신 내구도 ${mentalDmg1} 감소!`, "damage");
+            const ge11 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge11 };
+        }
+
+        if (skillId === 'סִטְרָא אַחְרָא') {
+            const livingPCs5 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
+            if (livingPCs5.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen8 = livingPCs5[Math.floor(Math.random() * livingPCs5.length)];
+            await updateDoc(doc(db, 'games', gameId, 'characters', chosen8.id), { bodyHp: 1, hp: 1 });
+            chosen8.bodyHp = 1; chosen8.hp = 1;
+            await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { sephTargetId: chosen8.id });
+            attacker.sephTargetId = chosen8.id;
+            await logAction(`🌑 [סִטְרָא אַחְרָא] ${attacker.name}: ${chosen8.name}의 신체 내구도를 1로 설정!`, "damage");
+            return { success: true, bonus: false };
+        }
+
+        if (skillId === '불완전한 위협') {
+            const livingPCs6 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
+            if (livingPCs6.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
+            const chosen9 = livingPCs6[Math.floor(Math.random() * livingPCs6.length)];
+            await updateDoc(doc(db, 'games', gameId, 'characters', chosen9.id), { bodyHp: 0, hp: 0, mentalHp: 0, mp: 0 });
+            chosen9.bodyHp = 0; chosen9.hp = 0; chosen9.mentalHp = 0; chosen9.mp = 0;
+            await logAction(`💀 [불완전한 위협] ${attacker.name}: ${chosen9.name}의 모든 내구도가 0이 되었습니다!`, "damage");
+            const ge12 = await checkGameEndCondition();
+            return { success: true, bonus: false, gameEnded: ge12 };
+        }
+
         // Hit roll for non-AoE attacks
         if (!skill.isAoe) {
-            const hitPct = attacker.hitPct || 80;
+            const hitLockEffect = attacker.statusEffects?.find(e => e.id === 'hitLock');
+            const hitPct = hitLockEffect ? (hitLockEffect.value ?? 1) : (attacker.hitPct || 80);
             const hasCorrosion = attacker.statusEffects?.some(e => e.id === 'corrosion');
             const effectiveHitPct = hasCorrosion ? 0 : hitPct;
             const roll = Math.floor(Math.random() * 100) + 1;
@@ -2473,6 +3160,24 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             } else {
                 bonusEarned = true;
                 await logAction(`✅ 명중! (명중률: ${effectiveHitPct}%, 굴림: ${roll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
+                // [첨예]: 아군(같은 진영) 행동이 명중하면 해당 진영 전체의 첨예 효과가 해제됩니다.
+                const sharpBearers = characters.filter(c => c.type === attacker.type && c.statusEffects?.some(e => e.id === 'sharp'));
+                for (const bearer of sharpBearers) {
+                    const remaining = bearer.statusEffects.filter(e => e.id !== 'sharp');
+                    bearer.statusEffects = remaining;
+                    await updateDoc(doc(db, 'games', gameId, 'characters', bearer.id), { statusEffects: remaining });
+                    await logAction(`💢 ${bearer.name}의 [첨예] 효과가 해제되었습니다.`, "system");
+                }
+                // [דָּעַת]: 명중률 증가 버프를 가진 채 명중하면 아군 전체 정신 20 감소 후 버프 해제
+                const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
+                if (daatEffect) {
+                    const allPCsForDaat = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+                    for (const pc of allPCsForDaat) { await updateMentalHP(pc, -20); }
+                    const remainingDaat = attacker.statusEffects.filter(e => !(e.id === 'hitLock' && e.daatBuff));
+                    attacker.statusEffects = remainingDaat;
+                    await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { statusEffects: remainingDaat });
+                    await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
+                }
             }
         }
 
@@ -2494,6 +3199,11 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
         }
     } else if (skill.category === 'Heal' || skill.category === 'Support' || skill.category === 'Defense' || skill.category === 'Special') {
+        // 저주: 회복 스킬 및 [태동]의 대상이 될 수 없음
+        if (target?.id && (skill.category === 'Heal' || skillId === '태동') && target.statusEffects?.some(e => e.id === 'cursed')) {
+            await logAction(`⚠️ ${target.name}은(는) [저주] 상태이므로 회복/태동 대상이 될 수 없습니다.`, "system");
+            return { success: false, bonus: false, gameEnded: false };
+        }
         const success = await applyHealOrSupport(attacker, target, skillId);
         if (success) {
             actionSucceeded = true;
@@ -2904,6 +3614,11 @@ function renderSkillButtons(selectedChar) {
         return;
     }
 
+    if (activeChar.statusEffects?.some(e => e.id === 'confused')) {
+        skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-yellow-400">😵 ${activeChar.name}은(는) [혼란] 상태로 아군을 공격합니다 (자동 실행 대기 중)</h3>`;
+        return;
+    }
+
     const canAct = canControlCharacter(activeChar.id) || (isAdmin && activeChar.type === 'PC');
     if (!canAct) {
         skillControls.innerHTML = `<p class="text-sm text-gray-400 mt-4">${activeChar.name}의 차례를 기다리고 있습니다...</p>`;
@@ -3037,7 +3752,7 @@ function renderSkillButtons(selectedChar) {
     
     try {
         await addDoc(collection(db, "games", gameId, "characters"), newCharData);
-        
+
         await logAction(`✨ 관리자가 '${charToCopy.name}' 캐릭터를 복사했습니다.`, "admin");
         closeModal('profile-modal'); // 현재 프로필 창 닫기
         showCustomModal("복사 완료", `'${newCharData.name}' 캐릭터가 생성되었습니다.`, [{ text: "확인", class: "bg-green-600" }]);
@@ -3046,6 +3761,92 @@ function renderSkillButtons(selectedChar) {
         showCustomModal("오류", "캐릭터를 복사하는 중 오류가 발생했습니다.", [{ text: "확인", class: "bg-red-600" }]);
     }
 }
+
+    // 캐릭터(주로 PC)의 스탯/스킬을 게임과 무관한 전역 프리셋으로 저장합니다.
+    async function saveCharacterPreset(character) {
+        const presetData = {
+            name: character.name,
+            imageUrl: character.imageUrl || '',
+            position: character.position || '',
+            size: character.size || 1,
+            maxBodyHp: character.maxBodyHp,
+            maxMentalHp: character.maxMentalHp,
+            op: character.op, defPct: character.defPct, hitPct: character.hitPct,
+            speed: character.speed, moveRange: character.moveRange,
+            skills: character.skills || [],
+            savedAt: serverTimestamp()
+        };
+        try {
+            await addDoc(collection(db, "characterPresets"), presetData);
+            showCustomModal("저장 완료", `'${character.name}' 캐릭터가 프리셋으로 저장되었습니다. 관리자 패널에서 다시 불러올 수 있습니다.`, [{ text: "확인", class: "bg-green-600" }]);
+        } catch (error) {
+            console.error("프리셋 저장 실패:", error);
+            showCustomModal("오류", "프리셋 저장 중 오류가 발생했습니다.", [{ text: "확인", class: "bg-red-600" }]);
+        }
+    }
+
+    async function loadCharacterPresetsIntoAdminPanel() {
+        const container = document.getElementById('character-preset-list');
+        if (!container) return;
+        try {
+            const snapshot = await getDocs(collection(db, "characterPresets"));
+            if (snapshot.empty) {
+                container.innerHTML = `<p class="text-sm text-gray-400">저장된 프리셋이 없습니다.</p>`;
+                return;
+            }
+            container.innerHTML = snapshot.docs.map(docSnap => {
+                const p = docSnap.data();
+                return `<div class="flex justify-between items-center bg-gray-800 p-2 rounded-md mb-2">
+                    <span>${p.name} ${p.position ? `<span class="text-xs text-gray-400">(${p.position})</span>` : ''}</span>
+                    <div class="flex gap-2">
+                        <button data-preset-id="${docSnap.id}" class="spawn-preset-btn bg-indigo-700 hover:bg-indigo-600 text-white text-xs px-2 py-1">소환</button>
+                        <button data-preset-id="${docSnap.id}" class="delete-preset-btn bg-red-800 hover:bg-red-700 text-white text-xs px-2 py-1">삭제</button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            container.querySelectorAll('.spawn-preset-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    if (!gameId) return;
+                    const presetId = btn.dataset.presetId;
+                    const presetDoc = await getDoc(doc(db, "characterPresets", presetId));
+                    if (!presetDoc.exists()) return;
+                    const p = presetDoc.data();
+                    const newChar = {
+                        name: p.name, type: 'PC', imageUrl: p.imageUrl || '',
+                        position: p.position || '',
+                        bodyHp: p.maxBodyHp, maxBodyHp: p.maxBodyHp,
+                        mentalHp: p.maxMentalHp, maxMentalHp: p.maxMentalHp,
+                        hp: p.maxBodyHp, maxHp: p.maxBodyHp, mp: p.maxMentalHp, maxMp: p.maxMentalHp,
+                        op: p.op, defPct: p.defPct, hitPct: p.hitPct,
+                        speed: p.speed, moveRange: p.moveRange,
+                        size: p.size || 1, skills: p.skills || [],
+                        x: null, y: null, password: DEFAULT_PC_PASSWORD,
+                        isLoggedIn: false, hasActedThisRound: false,
+                        statusEffects: [], isLastFallen: false, totalDamage: 0,
+                        turnOrder: characters.length + 1
+                    };
+                    await addDoc(collection(db, "games", gameId, "characters"), newChar);
+                    showCustomModal("소환 완료", `${p.name}이(가) 전장에 추가되었습니다!`, [{ text: "확인", class: "bg-green-600" }]);
+                };
+            });
+            container.querySelectorAll('.delete-preset-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const presetId = btn.dataset.presetId;
+                    showCustomModal("프리셋 삭제 확인", "이 캐릭터 프리셋을 영구적으로 삭제하시겠습니까?", [
+                        { text: "취소", class: "bg-gray-600" },
+                        { text: "삭제", class: "bg-red-600", onClick: async () => {
+                            await deleteDoc(doc(db, "characterPresets", presetId));
+                            loadCharacterPresetsIntoAdminPanel();
+                        } }
+                    ]);
+                };
+            });
+        } catch (error) {
+            console.error("프리셋 목록 로드 실패:", error);
+            container.innerHTML = `<p class="text-sm text-red-400">프리셋을 불러오는 중 오류가 발생했습니다.</p>`;
+        }
+    }
 
     
     async function deleteSkill(skillId, skillName) {
@@ -3340,6 +4141,7 @@ function renderLoginStatus() {
                     <div class="mt-8 flex gap-4 flex-shrink-0">
                        <button id="save-changes-btn" class="w-full bg-green-600 font-bold py-3">저장</button><button id="cancel-edit-btn" class="w-full bg-gray-600 font-bold py-3">취소</button>
                     </div>
+                    ${character.type === 'PC' ? `<button id="save-preset-btn" class="w-full mt-3 bg-indigo-600 font-bold py-2 flex-shrink-0">💾 캐릭터 프리셋으로 저장</button>` : ''}
                 </div>
             </div>`;
             
@@ -3382,6 +4184,7 @@ function renderLoginStatus() {
                 });
             };
             document.getElementById('cancel-edit-btn').onclick = () => openProfileModal(character, false);
+            document.getElementById('save-preset-btn')?.addEventListener('click', () => saveCharacterPreset(character));
           } else {
         const statIcon = (type) => ({
             hp: `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>`,
@@ -3801,8 +4604,15 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
             ${getNewCharacterFormHtml()}
         </div>`;
 
+        modalHtml += `<div class="mt-8 pt-4 border-t border-gray-700">
+            <h4 class="font-bold text-lg mb-2 text-green-400">저장된 캐릭터 프리셋 불러오기</h4>
+            <p class="text-sm text-gray-400 mb-3">캐릭터 프로필의 '캐릭터 수정' 화면에서 프리셋으로 저장한 PC를 다시 불러와 전장에 추가합니다.</p>
+            <div id="character-preset-list"><p class="text-sm text-gray-400">불러오는 중...</p></div>
+        </div>`;
+
 
         container.innerHTML = modalHtml;
+        loadCharacterPresetsIntoAdminPanel();
 
         container.querySelectorAll('.spawn-boss-btn').forEach(btn => {
             btn.onclick = async () => {
@@ -3811,6 +4621,10 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                 if (!boss || !gameId) return;
                 const newChar = {
                     name: boss.name, type: 'ENEMY', imageUrl: '',
+                    isBoss: true,
+                    stunImmune: boss.stunImmune || false,
+                    stunImmuneAfterOne: boss.stunImmuneAfterOne || false,
+                    stunUsedOnce: false,
                     bodyHp: boss.bodyHp, maxBodyHp: boss.maxBodyHp,
                     mentalHp: boss.mentalHp ?? 0, maxMentalHp: boss.maxMentalHp ?? 0,
                     hp: boss.bodyHp, maxHp: boss.maxBodyHp, mp: 0, maxMp: 0,
@@ -3831,6 +4645,10 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                 const subKey = btn.dataset.subKey;
                 const sub = RAID_ENEMY_CATALOG.subTypes.find(s => s.key === subKey);
                 if (!sub || !gameId) return;
+                const defaultStatusEffects = (sub.defaultEffects || []).map(e => {
+                    const base = PREDEFINED_EFFECTS[e.id];
+                    return base ? { ...base, turnsRemaining: e.turns, isNew: true } : null;
+                }).filter(Boolean);
                 const newChar = {
                     name: sub.label, type: 'ENEMY', imageUrl: '',
                     bodyHp: sub.bodyHp, maxBodyHp: sub.bodyHp,
@@ -3840,7 +4658,7 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                     size: 1, skills: sub.skills || [],
                     x: null, y: null, password: '',
                     isLoggedIn: false, hasActedThisRound: false,
-                    statusEffects: [], isLastFallen: false, totalDamage: 0,
+                    statusEffects: defaultStatusEffects, isLastFallen: false, totalDamage: 0,
                     turnOrder: characters.length + 1
                 };
                 await addDoc(collection(db, "games", gameId, "characters"), newChar);
