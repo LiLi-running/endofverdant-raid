@@ -773,41 +773,31 @@
         }
         
         
-        #unit-summary {
-             
-             
-             border-radius: 8px;
-             padding: 0.75rem 0; 
-             display: grid;
-             grid-template-columns: 1fr 1fr;
-             gap: 1rem;
-             text-align: center;
-             
+        .boss-status-item {
+            text-align: left;
         }
-        #remaining-pc, #remaining-enemy {
-            background-color: transparent; 
-            padding: 0; 
-            border-radius: 0;
-            border: none;
+        .boss-status-item .boss-status-name {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
         }
-
-        
-        .summary-count {
-            font-size: 3rem; 
-            font-weight: 700;
-            display: inline-block;
-            line-height: 1;
-            
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-            transition: all 0.3s;
+        .boss-status-item .boss-hp-bar {
+            height: 10px;
+            width: 100%;
+            background-color: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
         }
-        #pc-count.summary-count {
-            background-image: linear-gradient(180deg, var(--gradient-start), var(--pc-color));
+        .boss-status-item .boss-hp-fill {
+            height: 100%;
+            background-color: var(--enemy-color);
+            transition: width 0.3s;
         }
-        #enemy-count.summary-count {
-            background-image: linear-gradient(180deg, var(--gradient-start), var(--enemy-color));
+        .boss-status-item.boss-defeated .boss-hp-fill {
+            background-color: var(--text-tertiary);
         }
 
         #turn-announcement-backdrop {
@@ -1105,15 +1095,9 @@
                     <h1 class="text-xl font-bold font-title" style="color: var(--accent-primary);">게임 상태</h1>
                 </div>
                 
-                <div id="unit-summary" class="mb-4">
-                    <div id="remaining-pc" class="text-center">
-                        <p class="text-xs text-gray-400">남은 아군</p>
-                        <span id="pc-count" class="summary-count">0</span>
-                    </div>
-                    <div id="remaining-enemy" class="text-center">
-                        <p class="text-xs text-gray-400">남은 적군</p>
-                        <span id="enemy-count" class="summary-count">0</span>
-                    </div>
+                <div id="boss-status-summary" class="mb-4 space-y-2">
+                    <p class="text-xs text-gray-400">보스 신체 내구도</p>
+                    <p class="text-sm" style="color: var(--text-tertiary);">등장한 보스가 없습니다.</p>
                 </div>
 
                 <div id="game-id-container" class="hidden">
@@ -2913,6 +2897,39 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             return { success: false, bonus: false };
         }
 
+        // 명중률 판정: 모든 공격 스킬은 지정 대상/범위 내 대상에게 무조건 적중합니다.
+        // 명중률 판정이 성공하면 직후 1회 추가 행동(이동+스킬)이 가능해집니다 (적중 여부와는 무관).
+        {
+            const hitLockEffect = attacker.statusEffects?.find(e => e.id === 'hitLock');
+            const hasCorrosion = attacker.statusEffects?.some(e => e.id === 'corrosion');
+            const effectiveHitPct = hasCorrosion ? 0 : (hitLockEffect ? (hitLockEffect.value ?? 1) : (attacker.hitPct || 80));
+            const hitRoll = Math.floor(Math.random() * 100) + 1;
+            bonusEarned = hitRoll <= effectiveHitPct;
+            if (bonusEarned) {
+                await logAction(`✅ 명중 판정 성공! (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
+                // [첨예]: 같은 진영의 명중 판정 성공 시 해당 진영 전체의 첨예 효과가 해제됩니다.
+                const sharpBearers = characters.filter(c => c.type === attacker.type && c.statusEffects?.some(e => e.id === 'sharp'));
+                for (const bearer of sharpBearers) {
+                    const remaining = bearer.statusEffects.filter(e => e.id !== 'sharp');
+                    bearer.statusEffects = remaining;
+                    await updateDoc(doc(db, 'games', gameId, 'characters', bearer.id), { statusEffects: remaining });
+                    await logAction(`💢 ${bearer.name}의 [첨예] 효과가 해제되었습니다.`, "system");
+                }
+                // [דָּעַת]: 명중률 증가 버프를 가진 채 명중 판정 성공 시 아군 전체 정신 20 감소 후 버프 해제
+                const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
+                if (daatEffect) {
+                    const allPCsForDaat = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+                    for (const pc of allPCsForDaat) { await updateMentalHP(pc, -20); }
+                    const remainingDaat = attacker.statusEffects.filter(e => !(e.id === 'hitLock' && e.daatBuff));
+                    attacker.statusEffects = remainingDaat;
+                    await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { statusEffects: remainingDaat });
+                    await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
+                }
+            } else {
+                await logAction(`💨 명중 판정 실패. (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) 공격은 그대로 적중하지만 추가 행동은 없습니다.`, "system");
+            }
+        }
+
         // 관통: instant kill if conditions met
         if (skillId === '관통') {
             if ((attacker.mentalHp || 0) > 60) {
@@ -2927,7 +2944,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { bodyHp: 0, hp: 0 });
             await logAction(`💉 [관통] ${attacker.name}: ${target.name}의 신체 내구도 → 0`, "damage");
             const penetrateGameOver = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: penetrateGameOver };
+            return { success: true, bonus: bonusEarned, gameEnded: penetrateGameOver };
         }
 
         // ===== 보스/서브 개체 전용 스킬 (대상은 스킬 자체가 재계산) =====
@@ -2941,7 +2958,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(`💥 [hats'ik] ${attacker.name}: 주변 3마스 아군 ${targets.map(t => t.name).join(', ')}에게 ${dmg} 피해 및 2마스 밀쳐내기!`, "damage");
             const ge1 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge1 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge1 };
         }
 
         if (skillId === "ch'a'ik ik'") {
@@ -2952,7 +2969,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateMentalHP(chosen, -10);
             await logAction(`🩸 [ch'a'ik ik'] ${attacker.name}: ${chosen.name}의 신체 내구도 20, 정신 내구도 10 감소!`, "damage");
             const ge2 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge2 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge2 };
         }
 
         if (skillId === "k'alik") {
@@ -2961,7 +2978,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             if (farthest.length === 0) { await logAction(`⚠️ [k'alik] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
             for (const t of farthest) { await applyStatusEffect(t, { id: 'rooted', turns: 1 }, attacker.id); }
             await logAction(`🔗 [k'alik] ${attacker.name}: 가장 멀리 있는 아군 ${farthest.map(t => t.name).join(', ')}에게 [속박] 부여!`, "system");
-            return { success: true, bonus: false };
+            return { success: true, bonus: bonusEarned };
         }
 
         if (skillId === 'ما خفي كان أعظم') {
@@ -2975,7 +2992,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(`➖ [가로 광역] ${attacker.name}: ${targets.map(t => t.name).join(', ')}에게 ${dmg2} 피해 및 3라운드간 정신 5 감소 효과 부여!`, "damage");
             const ge3 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge3 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge3 };
         }
 
         if (skillId === 'المؤمن مصاب.') {
@@ -2985,7 +3002,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateMentalHP(chosen2, -40);
             await updateBodyHP(attacker, 20, "heal");
             await logAction(`🧛 ${attacker.name}: ${chosen2.name}의 정신 내구도 40 흡수, 자신의 신체 내구도 20 회복!`, "damage");
-            return { success: true, bonus: false };
+            return { success: true, bonus: bonusEarned };
         }
 
         if (skillId === 'Hvergelmir') {
@@ -2997,7 +3014,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateMentalHP(chosen3, -15);
             await logAction(`💧 [Hvergelmir] ${attacker.name}: ${chosen3.name}의 신체 내구도 ${dmg3}, 정신 내구도 15 감소!`, "damage");
             const ge4 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge4 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge4 };
         }
 
         if (skillId === 'Turul szárnyai') {
@@ -3006,7 +3023,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             if (hitTargets.length === 0) { await logAction(`⚠️ [Turul szárnyai] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
             for (const t of hitTargets) { await updateMentalHP(t, -30); }
             await logAction(`🦅 [Turul szárnyai] 적 인근 1마스 내 아군 ${hitTargets.map(t => t.name).join(', ')}의 정신 내구도 30 감소!`, "damage");
-            return { success: true, bonus: false };
+            return { success: true, bonus: bonusEarned };
         }
 
         if (skillId === 'Ördög rosszindulata') {
@@ -3020,7 +3037,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(`👹 [Ördög rosszindulata] ${attacker.name}: (${bestCenter.x},${bestCenter.y}) 중심 3x3 범위에 ${dmg4} 피해! (50% 확률 기절)`, "damage");
             const ge5 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge5 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge5 };
         }
 
         if (skillId === 'Bábák varázsa') {
@@ -3044,7 +3061,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(msg1, "damage");
             const ge6 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge6 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge6 };
         }
 
         if (skillId === 'کینه اهریمن.') {
@@ -3057,7 +3074,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await applyStatusEffect(chosen5, { id: 'cursed', turns: 2 }, attacker.id);
             await logAction(`😈 ${attacker.name}: ${chosen5.name}에게 신체 ${Math.round(op1 * 3)}, 정신 ${Math.round(op1)} 피해 및 [저주] 부여!`, "damage");
             const ge7 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge7 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge7 };
         }
 
         if (skillId === 'هوم سفید') {
@@ -3079,7 +3096,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(msg2, "damage");
             const ge8 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge8 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge8 };
         }
 
         if (skillId === 'حفاظت از اهورا مزدا') {
@@ -3099,7 +3116,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(`🛡️ [حفاظت از اهورا مزدا] 적에 인접한 아군 ${affected.map(a => a.pc.name).join(', ')}에게 피해 및 3마스 밀쳐내기!`, "damage");
             const ge9 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge9 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge9 };
         }
 
         if (skillId === 'אֶהְיֶה אֲשֶׁר אֶהְיֶה') {
@@ -3116,7 +3133,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             }
             await logAction(msg3, "damage");
             const ge10 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge10 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge10 };
         }
 
         if (skillId === 'נְחֻשְׁתָּן') {
@@ -3131,7 +3148,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateMentalHP(single1, -mentalDmg1);
             await logAction(`🐍 [נְחֻשְׁתָּן] ${attacker.name}: 아군 전체 신체 ${dmgEach} 피해! ${single1.name}의 정신 내구도 ${mentalDmg1} 감소!`, "damage");
             const ge11 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge11 };
+            return { success: true, bonus: bonusEarned, gameEnded: ge11 };
         }
 
         if (skillId === 'סִטְרָא אַחְרָא') {
@@ -3143,7 +3160,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { sephTargetId: chosen8.id });
             attacker.sephTargetId = chosen8.id;
             await logAction(`🌑 [סִטְרָא אַחְרָא] ${attacker.name}: ${chosen8.name}의 신체 내구도를 1로 설정!`, "damage");
-            return { success: true, bonus: false };
+            return { success: true, bonus: bonusEarned };
         }
 
         if (skillId === '불완전한 위협') {
@@ -3154,42 +3171,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             chosen9.bodyHp = 0; chosen9.hp = 0; chosen9.mentalHp = 0; chosen9.mp = 0;
             await logAction(`💀 [불완전한 위협] ${attacker.name}: ${chosen9.name}의 모든 내구도가 0이 되었습니다!`, "damage");
             const ge12 = await checkGameEndCondition();
-            return { success: true, bonus: false, gameEnded: ge12 };
-        }
-
-        // Hit roll for non-AoE attacks
-        if (!skill.isAoe) {
-            const hitLockEffect = attacker.statusEffects?.find(e => e.id === 'hitLock');
-            const hitPct = hitLockEffect ? (hitLockEffect.value ?? 1) : (attacker.hitPct || 80);
-            const hasCorrosion = attacker.statusEffects?.some(e => e.id === 'corrosion');
-            const effectiveHitPct = hasCorrosion ? 0 : hitPct;
-            const roll = Math.floor(Math.random() * 100) + 1;
-            const hitOk = roll <= effectiveHitPct;
-            if (!hitOk) {
-                await logAction(`💨 ${attacker.name}의 ${skill.name}이(가) 빗나갔습니다! (명중률: ${effectiveHitPct}%, 굴림: ${roll})`, "system");
-                return { success: false, bonus: false };
-            } else {
-                bonusEarned = true;
-                await logAction(`✅ 명중! (명중률: ${effectiveHitPct}%, 굴림: ${roll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
-                // [첨예]: 아군(같은 진영) 행동이 명중하면 해당 진영 전체의 첨예 효과가 해제됩니다.
-                const sharpBearers = characters.filter(c => c.type === attacker.type && c.statusEffects?.some(e => e.id === 'sharp'));
-                for (const bearer of sharpBearers) {
-                    const remaining = bearer.statusEffects.filter(e => e.id !== 'sharp');
-                    bearer.statusEffects = remaining;
-                    await updateDoc(doc(db, 'games', gameId, 'characters', bearer.id), { statusEffects: remaining });
-                    await logAction(`💢 ${bearer.name}의 [첨예] 효과가 해제되었습니다.`, "system");
-                }
-                // [דָּעַת]: 명중률 증가 버프를 가진 채 명중하면 아군 전체 정신 20 감소 후 버프 해제
-                const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
-                if (daatEffect) {
-                    const allPCsForDaat = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-                    for (const pc of allPCsForDaat) { await updateMentalHP(pc, -20); }
-                    const remainingDaat = attacker.statusEffects.filter(e => !(e.id === 'hitLock' && e.daatBuff));
-                    attacker.statusEffects = remainingDaat;
-                    await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { statusEffects: remainingDaat });
-                    await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
-                }
-            }
+            return { success: true, bonus: bonusEarned, gameEnded: ge12 };
         }
 
         if (skill.isAoe) {
@@ -3687,15 +3669,29 @@ function renderSkillButtons(selectedChar) {
         }
     });
 }
+    function updateBossStatusSummary() {
+        const container = document.getElementById('boss-status-summary');
+        if (!container) return;
+        const bosses = characters.filter(c => c.isBoss && c.x !== null).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        if (bosses.length === 0) {
+            container.innerHTML = `<p class="text-xs text-gray-400">보스 신체 내구도</p><p class="text-sm" style="color: var(--text-tertiary);">등장한 보스가 없습니다.</p>`;
+            return;
+        }
+        container.innerHTML = `<p class="text-xs text-gray-400">보스 신체 내구도</p>` + bosses.map(boss => {
+            const pct = boss.maxBodyHp > 0 ? Math.max(0, Math.min(100, (boss.bodyHp / boss.maxBodyHp) * 100)) : 0;
+            const defeated = boss.bodyHp <= 0;
+            return `<div class="boss-status-item ${defeated ? 'boss-defeated' : ''}">
+                <div class="boss-status-name"><span>${boss.name}${defeated ? ' (쓰러짐)' : ''}</span><span>${boss.bodyHp}/${boss.maxBodyHp}</span></div>
+                <div class="boss-hp-bar"><div class="boss-hp-fill" style="width: ${pct}%;"></div></div>
+            </div>`;
+        }).join('');
+    }
+
     function updateCharacterList() {
     const listContent = document.getElementById('char-list-content');
     listContent.innerHTML = '';
-    
-    const remainingPC = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null).length;
-    const remainingEnemy = characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.x !== null).length;
 
-    document.getElementById('pc-count').textContent = remainingPC;
-    document.getElementById('enemy-count').textContent = remainingEnemy;
+    updateBossStatusSummary();
 
     if (!gameId || characters.length === 0) {
         listContent.innerHTML = `<p class="text-sm text-gray-400">캐릭터 로딩 중...</p>`;
