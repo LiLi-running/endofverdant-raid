@@ -575,9 +575,53 @@
              background: linear-gradient(0deg, rgba(200, 200, 200, 0.9) 0%, rgba(255, 255, 255, 0.0) 60%); 
              color: var(--text-primary);
         }
-        html.light .char-card-item.enemy-card .char-card-info { 
+        html.light .char-card-item.enemy-card .char-card-info {
              background: linear-gradient(0deg, rgba(255, 200, 200, 0.9) 0%, rgba(255, 255, 255, 0.0) 60%);
              color: var(--text-primary);
+        }
+
+        /* 캐릭터 상세(프로필) 및 관리자 패널 내부는 Tailwind의 고정 다크 회색 클래스를 쓰고 있어,
+           밝은 모드에서도 이 영역만큼은 밝은 테마 색상으로 강제 전환합니다. */
+        html.light #modal-content .bg-gray-900,
+        html.light #modal-content .bg-gray-800,
+        html.light #admin-modal-content .bg-gray-900,
+        html.light #admin-modal-content .bg-gray-800 {
+            background-color: #E5E7EB !important;
+        }
+        html.light #modal-content .bg-gray-700,
+        html.light #modal-content .bg-gray-600,
+        html.light #admin-modal-content .bg-gray-700,
+        html.light #admin-modal-content .bg-gray-600 {
+            background-color: #F3F4F6 !important;
+        }
+        html.light #modal-content .bg-gray-800\/50,
+        html.light #modal-content .bg-gray-700\/50,
+        html.light #admin-modal-content .bg-gray-800\/50,
+        html.light #admin-modal-content .bg-gray-700\/50 {
+            background-color: rgba(229, 231, 235, 0.6) !important;
+        }
+        html.light #modal-content .border-gray-700,
+        html.light #modal-content .border-gray-600,
+        html.light #modal-content .border-gray-700\/50,
+        html.light #admin-modal-content .border-gray-700,
+        html.light #admin-modal-content .border-gray-600,
+        html.light #admin-modal-content .border-gray-700\/50 {
+            border-color: #D1D5DB !important;
+        }
+        html.light #modal-content .text-gray-300,
+        html.light #modal-content .text-gray-400,
+        html.light #modal-content .text-gray-500,
+        html.light #admin-modal-content .text-gray-300,
+        html.light #admin-modal-content .text-gray-400,
+        html.light #admin-modal-content .text-gray-500 {
+            color: #4B5563 !important;
+        }
+        html.light #modal-content input.form-input,
+        html.light #modal-content select.form-input,
+        html.light #admin-modal-content input.form-input,
+        html.light #admin-modal-content select.form-input {
+            background-color: #F9FAFB !important;
+            color: #1F2937 !important;
         }
 
         .enemy-card .details-btn { border-color: #991b1b; color: #f87171; }
@@ -621,21 +665,24 @@
         #game-log-list .log-join::before { color: var(--log-join); }
         #game-log-list .log-admin-move::before { color: var(--log-admin); }
 
-        .profile-modal-container { 
-    background: url('https://www.transparenttextures.com/patterns/dark-matter.png'), linear-gradient(to bottom right, #1a1a1a, #111111); 
-    color: var(--text-primary); 
-    border: 1px solid var(--accent-primary); 
-    box-shadow: 0 0 30px rgba(212, 183, 131, 0.3); 
-    display: grid; 
+        .profile-modal-container {
+    background: url('https://www.transparenttextures.com/patterns/dark-matter.png'), linear-gradient(to bottom right, #1a1a1a, #111111);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-primary);
+    box-shadow: 0 0 30px rgba(212, 183, 131, 0.3);
+    display: grid;
     grid-template-columns: 350px 1fr;
-    width: 100%; 
-    max-width: 900px; 
-        height: 650px; 
+    width: 100%;
+    max-width: 900px;
+        height: 650px;
     max-height: 90vh;
-    overflow: hidden; 
-    
-    position: relative; 
+    overflow: hidden;
+
+    position: relative;
 }
+        html.light .profile-modal-container {
+            background: linear-gradient(to bottom right, #FFFFFF, #F3F4F6);
+        }
         .profile-modal-container.enemy-profile { border-color: #ef4444; box-shadow: 0 0 30px rgba(239, 68, 68, 0.3); }
         .profile-modal-container.enemy-profile .profile-char-name, 
         .profile-modal-container.enemy-profile .stat-item svg, 
