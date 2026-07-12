@@ -1343,7 +1343,7 @@ const combatTextStartTime = new Date();
         '섬전': { id: '섬전', name: '섬전', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 3, icon: '⚡', mpCost: 15, category: 'Attack' },
         '살상': { id: '살상', name: '살상', type: 'Melee', range: 3, rangeShape: 'diamond', multiplier: 2, icon: '🗡️', mpCost: 30, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond' },
         '관통': { id: '관통', name: '관통', type: 'Melee', range: 1, rangeShape: 'diamond', multiplier: 0, icon: '🏹', mpCost: 25, category: 'Attack' },
-        '의지': { id: '의지', name: '의지', type: 'Melee', range: 3, rangeShape: 'diamond', multiplier: 3, icon: '🔥', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond' },
+        '의지': { id: '의지', name: '의지', type: 'Melee', range: 3, rangeShape: 'diamond', multiplier: 3, icon: '🔥', mpCost: 0, category: 'Attack', isAoe: true, aoeRange: 3, aoeShape: 'diamond', appliesEffect: { id: 'taunted', turns: 9999 } },
         '속박': { id: '속박', name: '속박', type: 'Melee', range: 2, rangeShape: 'diamond', multiplier: 3, icon: '🔗', mpCost: 10, category: 'Attack', isAoe: true, aoeRange: 2, aoeShape: 'diamond', appliesEffect: { id: 'rooted', turns: 1 } },
         '지탱': { id: '지탱', name: '지탱', type: 'Defense', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🛡️', mpCost: 10, category: 'Defense' },
         '목갑': { id: '목갑', name: '목갑', type: 'Defense', range: 0, rangeShape: 'diamond', multiplier: 0, icon: '🪵', mpCost: 20, category: 'Defense' },
@@ -1414,18 +1414,18 @@ const combatTextStartTime = new Date();
     };
     const RAID_ENEMY_CATALOG = {
         subTypes: [
-            { key: 'fragment', label: '녹빛 파편', bodyHp: 60, mentalHp: 0, maxBodyHp: 60, maxMentalHp: 0, speed: 4.5, moveRange: 3, op: 10, defPct: 0, hitPct: 100, skills: ['파편'] },
-            { key: 'spore', label: '떠다니는 균사', bodyHp: 40, mentalHp: 0, maxBodyHp: 40, maxMentalHp: 0, speed: 7.5, moveRange: 4, op: 10, defPct: 0, hitPct: 100, skills: ['균사'], defaultEffects: [{ id: 'stealth', turns: 9999 }] },
-            { key: 'cocoon', label: '질긴 옹이', bodyHp: 200, mentalHp: 0, maxBodyHp: 200, maxMentalHp: 0, speed: 2.5, moveRange: 1, op: 4, defPct: 0, hitPct: 100, skills: ['대리'] },
+            { key: 'fragment', label: '녹빛 파편', imageUrl: 'https://i.imgur.com/2KBDVmP.png', bodyHp: 60, mentalHp: 0, maxBodyHp: 60, maxMentalHp: 0, speed: 4.5, moveRange: 3, op: 10, defPct: 0, hitPct: 0, skills: ['파편'] },
+            { key: 'spore', label: '떠다니는 균사', imageUrl: 'https://i.imgur.com/HULXn1e.png', bodyHp: 40, mentalHp: 0, maxBodyHp: 40, maxMentalHp: 0, speed: 7.5, moveRange: 4, op: 10, defPct: 0, hitPct: 0, skills: ['균사'], defaultEffects: [{ id: 'stealth', turns: 9999 }] },
+            { key: 'cocoon', label: '질긴 옹이', imageUrl: 'https://i.imgur.com/WpF02qq.png', bodyHp: 200, mentalHp: 0, maxBodyHp: 200, maxMentalHp: 0, speed: 2.5, moveRange: 1, op: 4, defPct: 0, hitPct: 0, skills: ['대리'] },
         ],
         bosses: [
-            { name: '야슈체', bodyHp: 500, maxBodyHp: 500, mentalHp: 0, maxMentalHp: 0, speed: 3.5, moveRange: 1, op: 15, defPct: 10, hitPct: 10, skills: ["hats'ik", "ch'a'ik ik'", "k'alik"], desc: '파편 3체. 스킬: 범위 밀쳐내기, 내구도 차감, 원거리 속박' },
-            { name: '시카모어', bodyHp: 700, maxBodyHp: 700, mentalHp: 0, maxMentalHp: 0, speed: 5.5, moveRange: 2, op: 15, defPct: 15, hitPct: 10, skills: ['ما خفي كان أعظم', 'المؤمن مصاب.', 'يا ما تحت السواهي دواهي.'], desc: '파편 2, 균사 1. 스킬: 가로 광역 혼란, 정신 흡수 회복, 은폐 부여' },
-            { name: '위그드라실', bodyHp: 1000, maxBodyHp: 1000, mentalHp: 0, maxMentalHp: 0, speed: 6.5, moveRange: 0, op: 20, defPct: 20, hitPct: 15, skills: ['Urðarbrunnr', 'Hvergelmir', 'Mímisbrunnr'], stunImmuneAfterOne: true, desc: '파편 2, 균사 2. 스킬: Urðarbrunnr, Hvergelmir, Mímisbrunnr' },
-            { name: '에게르퇴뢰 파', bodyHp: 1500, maxBodyHp: 1500, mentalHp: 0, maxMentalHp: 0, speed: 7.5, moveRange: 3, op: 30, defPct: 20, hitPct: 20, skills: ['Turul szárnyai', 'Ördög rosszindulata', 'Bábák varázsa'], stunImmune: true, desc: '파편 1, 균사 2, 옹이 1. 스킬: Turul, Ördög, Bábák' },
-            { name: '가오케레나', bodyHp: 2000, maxBodyHp: 2000, mentalHp: 0, maxMentalHp: 0, speed: 8.5, moveRange: 3, op: 30, defPct: 25, hitPct: 25, skills: ['کینه اهریمن.', 'هوم سفید', 'خانه بوروکاشا', 'لانه سیمرغ', 'حفاظت از اهورا مزدا'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 1. 5개 스킬' },
-            { name: '세피로트', bodyHp: 10000, maxBodyHp: 10000, mentalHp: 0, maxMentalHp: 0, speed: 9.5, moveRange: 4, op: 40, defPct: 35, hitPct: 30, skills: ['אֶהְיֶה אֲשֶׁר אֶהְיֶה', 'נְחֻשְׁתָּן', 'דָּעַת', 'אין', 'סִטְרָא אַחְרָא', 'לְהִתְפַּלֵל'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 2. 6개 스킬. 멤버 사망 시 최대 체력 감소' },
-            { name: '아포칼립스', bodyHp: 99999, maxBodyHp: 99999, mentalHp: 0, maxMentalHp: 0, speed: 1, moveRange: 0, op: 0, defPct: 0, hitPct: 0, skills: ['불완전한 위협'], stunImmune: true, desc: '무작위 아군 1명의 모든 내구도를 0으로 설정' },
+            { name: '야슈체', imageUrl: 'https://i.imgur.com/C8oxEtH.png', bodyHp: 500, maxBodyHp: 500, mentalHp: 0, maxMentalHp: 0, speed: 3.5, moveRange: 1, op: 15, defPct: 10, hitPct: 10, skills: ["hats'ik", "ch'a'ik ik'", "k'alik"], desc: '파편 3체. 스킬: 범위 밀쳐내기, 내구도 차감, 원거리 속박' },
+            { name: '시카모어', imageUrl: 'https://i.imgur.com/HZdhbNn.png', bodyHp: 700, maxBodyHp: 700, mentalHp: 0, maxMentalHp: 0, speed: 5.5, moveRange: 2, op: 15, defPct: 15, hitPct: 10, skills: ['ما خفي كان أعظم', 'المؤمن مصاب.', 'يا ما تحت السواهي دواهي.'], desc: '파편 2, 균사 1. 스킬: 가로 광역 혼란, 정신 흡수 회복, 은폐 부여' },
+            { name: '위그드라실', imageUrl: 'https://i.imgur.com/l6RMccd.png', bodyHp: 1000, maxBodyHp: 1000, mentalHp: 0, maxMentalHp: 0, speed: 6.5, moveRange: 0, op: 20, defPct: 20, hitPct: 15, skills: ['Urðarbrunnr', 'Hvergelmir', 'Mímisbrunnr'], stunImmuneAfterOne: true, desc: '파편 2, 균사 2. 스킬: Urðarbrunnr, Hvergelmir, Mímisbrunnr' },
+            { name: '에게르퇴뢰 파', imageUrl: 'https://i.imgur.com/8RGyVKu.png', bodyHp: 1500, maxBodyHp: 1500, mentalHp: 0, maxMentalHp: 0, speed: 7.5, moveRange: 3, op: 30, defPct: 20, hitPct: 20, skills: ['Turul szárnyai', 'Ördög rosszindulata', 'Bábák varázsa'], stunImmune: true, desc: '파편 1, 균사 2, 옹이 1. 스킬: Turul, Ördög, Bábák' },
+            { name: '가오케레나', imageUrl: 'https://i.imgur.com/uv3mvUd.png', bodyHp: 2000, maxBodyHp: 2000, mentalHp: 0, maxMentalHp: 0, speed: 8.5, moveRange: 3, op: 30, defPct: 25, hitPct: 25, skills: ['کینه اهریمن.', 'هوم سفید', 'خانه بوروکاشا', 'لانه سیمرغ', 'حفاظت از اهورا مزدا'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 1. 5개 스킬' },
+            { name: '세피로트', imageUrl: 'https://i.imgur.com/Olq6BfV.png', bodyHp: 10000, maxBodyHp: 10000, mentalHp: 0, maxMentalHp: 0, speed: 9.5, moveRange: 4, op: 40, defPct: 35, hitPct: 30, skills: ['אֶהְיֶה אֲשֶׁר אֶהְיֶה', 'נְחֻשְׁתָּן', 'דָּעַת', 'אין', 'סִטְרָא אַחְרָא', 'לְהִתְפַּלֵל'], stunImmune: true, desc: '파편 2, 균사 2, 옹이 2. 6개 스킬. 멤버 사망 시 최대 체력 감소' },
+            { name: '아포칼립스', imageUrl: 'https://i.imgur.com/JcYwyco.png', bodyHp: 99999, maxBodyHp: 99999, mentalHp: 0, maxMentalHp: 0, speed: 1, moveRange: 0, op: 0, defPct: 0, hitPct: 0, skills: ['불완전한 위협'], stunImmune: true, desc: '무작위 아군 1명의 모든 내구도를 0으로 설정' },
         ]
     };
     let SKILLS = {};
@@ -2851,16 +2851,31 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
 
     const currentEffects = targetDoc.data().statusEffects || [];
 
-    if (currentEffects.some(e => e.id === newEffect.id)) {
+    // 도발은 예외: 다른 시전자가 다시 도발을 걸면 이전 도발을 새 도발로 교체합니다.
+    if (newEffect.id !== 'taunted' && currentEffects.some(e => e.id === newEffect.id)) {
         console.log(`${target.name}은(는) 이미 ${newEffect.name} 효과를 받고 있습니다.`);
         return;
     }
 
-    const updatedEffects = [...currentEffects, newEffect];
+    const updatedEffects = newEffect.id === 'taunted'
+        ? [...currentEffects.filter(e => e.id !== 'taunted'), newEffect]
+        : [...currentEffects, newEffect];
     await updateDoc(targetRef, { statusEffects: updatedEffects });
+    target.statusEffects = updatedEffects;
     const icon = STATUS_EFFECT_ICONS[newEffect.id] || '🔗';
-    
+
     await logAction(`${icon} ${target.name}이(가) [${newEffect.name}] 효과를 받았습니다! (${newEffect.turnsRemaining}턴 지속)`, "system");
+
+    // 은폐 부여 시: 이 캐릭터가 걸어둔 모든 도발이 해제됩니다.
+    if (newEffect.id === 'stealth') {
+        const tauntedBearers = characters.filter(c => c.id !== target.id && c.statusEffects?.some(e => e.id === 'taunted' && e.casterId === target.id));
+        for (const bearer of tauntedBearers) {
+            const remaining = (bearer.statusEffects || []).filter(e => !(e.id === 'taunted' && e.casterId === target.id));
+            bearer.statusEffects = remaining;
+            await updateDoc(doc(db, 'games', gameId, 'characters', bearer.id), { statusEffects: remaining });
+            await logAction(`🎯 ${target.name}이(가) [은폐] 상태가 되어 ${bearer.name}에게 걸린 [도발]이 해제되었습니다.`, "system");
+        }
+    }
 }
     async function showGameSummaryModal(title, message) {
     const remainingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null).length;
@@ -4674,7 +4689,7 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                 const boss = RAID_ENEMY_CATALOG.bosses.find(b => b.name === bossName);
                 if (!boss || !gameId) return;
                 const newChar = {
-                    name: boss.name, type: 'ENEMY', imageUrl: '',
+                    name: boss.name, type: 'ENEMY', imageUrl: boss.imageUrl || '',
                     isBoss: true,
                     stunImmune: boss.stunImmune || false,
                     stunImmuneAfterOne: boss.stunImmuneAfterOne || false,
@@ -4704,7 +4719,7 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                     return base ? { ...base, turnsRemaining: e.turns, isNew: true } : null;
                 }).filter(Boolean);
                 const newChar = {
-                    name: sub.label, type: 'ENEMY', imageUrl: '',
+                    name: sub.label, type: 'ENEMY', imageUrl: sub.imageUrl || '',
                     bodyHp: sub.bodyHp, maxBodyHp: sub.bodyHp,
                     mentalHp: 0, maxMentalHp: 0, hp: sub.bodyHp, maxHp: sub.bodyHp, mp: 0, maxMp: 0,
                     op: sub.op, defPct: sub.defPct ?? 0, hitPct: sub.hitPct ?? 100,
@@ -5624,18 +5639,3 @@ initializeTouchDragAndDrop();
 
     if (window.innerWidth < 1024) {
         charListContent.classList.add('hidden');
-        charListToggleIcon.classList.remove('rotate-180');
-    } else {
-        charListContent.classList.remove('hidden');
-    }
-window.addEventListener('beforeunload', async (event) => {
-    if (loggedInCharId) {
-        await updateDoc(doc(db, 'games', gameId, 'characters', loggedInCharId), { isLoggedIn: false });
-    }
-});
-</script>
-</body>
-</html>
-
-
-
