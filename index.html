@@ -1099,7 +1099,7 @@
                 <div class="flex items-center"><hr class="flex-grow border-gray-600"><span class="px-4 text-gray-400">또는</span><hr class="flex-grow border-gray-600"></div>
                 <div class="flex gap-2">
                     <input type="text" id="game-id-input" placeholder="게임 코드 입력" class="form-input flex-grow">
-                    <button id="join-game-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4">참가하기</button>
+                    <button id="join-game-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 whitespace-nowrap shrink-0">참가하기</button>
                 </div>
             </div>
         </div>
@@ -5283,6 +5283,7 @@ createGameBtn.addEventListener('click', createGame);
 
     createGameBtn.addEventListener('click', createGame);
     joinGameBtn.addEventListener('click', () => joinGame(gameIdInput.value));
+    gameIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinGame(gameIdInput.value); });
     leaveGameBtn.addEventListener('click', leaveGame);
     
     // User Info Modal Handlers
