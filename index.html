@@ -1499,7 +1499,6 @@ const loginStatusModal = document.getElementById('login-status-modal');
     if (isNewGame) {
         await deleteLogsCollection(gameId);
         await seedInitialSettings(gameId);
-        await seedInitialCharacters(gameId);
         await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: {} });
         await logAction("⚔️ 새로운 게임이 시작되었습니다! 게임 로그가 초기화되었습니다.", "system");
     }
@@ -1528,7 +1527,7 @@ const loginStatusModal = document.getElementById('login-status-modal');
             currentTurnCharId: null,
             turnQueue: [],
             activeExtraUsed: false,
-            adminPassword: window.ADMIN_PASSWORD || "0000",
+            adminPassword: window.ADMIN_PASSWORD || "0613",
             gameState: 'PREPARATION', 
             round: 1, 
             maxRounds: 0, 
@@ -1537,43 +1536,6 @@ const loginStatusModal = document.getElementById('login-status-modal');
             pageBackgroundImage: ''
         }); 
     }
-    async function seedInitialCharacters(gameId) {
-    const charCollectionRef = collection(db, "games", gameId, "characters");
-    const snapshot = await getDocs(charCollectionRef);
-    if (snapshot.empty) {
-        const batch = writeBatch(db);
-        const pcData = [
-            { name: "러너1", type: 'PC', size: 1, position: '덤불', skills: [...POSITIONS['덤불']], order: 1,
-              bodyHp: 100, maxBodyHp: 100, mentalHp: 80, maxMentalHp: 80, op: 15, defPct: 10, hitPct: 80, speed: 5, moveRange: 3 },
-            { name: "러너2", type: 'PC', size: 1, position: '고목', skills: [...POSITIONS['고목']], order: 3,
-              bodyHp: 120, maxBodyHp: 120, mentalHp: 60, maxMentalHp: 60, op: 12, defPct: 15, hitPct: 75, speed: 4, moveRange: 2 },
-        ];
-        const enemyData = [
-            { name: "녹빛 파편", type: 'ENEMY', size: 1, skills: ['속박'], order: 2,
-              bodyHp: 60, maxBodyHp: 60, mentalHp: 0, maxMentalHp: 0, op: 10, defPct: 0, hitPct: 100, speed: 4.5, moveRange: 3 },
-            { name: "보스", type: 'ENEMY', size: 2, skills: ['살상', '의지'], order: 4,
-              bodyHp: 1500, maxBodyHp: 1500, mentalHp: 0, maxMentalHp: 0, op: 15, defPct: 10, hitPct: 10, speed: 3.5, moveRange: 1 },
-        ];
-        [...pcData, ...enemyData].forEach(char => {
-            const charPassword = char.type === 'PC' ? DEFAULT_PC_PASSWORD : '';
-            const newChar = {
-                name: char.name, imageUrl: '', type: char.type, size: char.size,
-                position: char.position || '',
-                bodyHp: char.bodyHp, maxBodyHp: char.maxBodyHp,
-                mentalHp: char.mentalHp, maxMentalHp: char.maxMentalHp,
-                op: char.op, defPct: char.defPct, hitPct: char.hitPct,
-                speed: char.speed, moveRange: char.moveRange,
-                x: null, y: null, skills: char.skills || [], turnOrder: char.order,
-                password: charPassword, isAuto: false, statusEffects: [],
-                isLoggedIn: false, hasActedThisRound: false,
-                isLastFallen: false, totalDamage: 0
-            };
-            batch.set(doc(charCollectionRef), newChar);
-        });
-        await batch.commit();
-    }
-}
-    
     // --- Data Listeners ---
     function listenForGameData(gameId) {
     if (unsubscribeSettings) unsubscribeSettings();
