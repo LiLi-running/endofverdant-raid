@@ -3734,14 +3734,24 @@ function renderSkillButtons(selectedChar) {
         let statusColor = char.bodyHp <= 0 ? 'text-gray-500' : (char.type === 'ENEMY' ? 'text-red-400' : 'text-gray-300');
         if (isActionablePC) statusColor = 'text-yellow-400';
 
+        const statusCompact = char.bodyHp <= 0 ? '사망' : (char.x !== null ? `신체: ${char.bodyHp}/${char.maxBodyHp} | 정신: ${char.mentalHp}/${char.maxMentalHp}` : '미배치');
+        const statusLines = char.bodyHp <= 0
+            ? `<span>사망</span>`
+            : (char.x !== null
+                ? `<span>신체: ${char.bodyHp}/${char.maxBodyHp}</span><span>정신: ${char.mentalHp}/${char.maxMentalHp}</span>`
+                : `<span>미배치</span>`);
+
         charItem.innerHTML = `
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <img src="${char.imageUrl || `https://placehold.co/32x32/1f2937/a0aec0?text=${char.name.charAt(0)}`}" class="w-8 h-8 rounded-full object-cover">
-                    <span class="font-semibold truncate">${char.name}</span>
+            <div class="flex items-center justify-between lg:items-start">
+                <div class="flex items-center gap-2 lg:items-start min-w-0">
+                    <img src="${char.imageUrl || `https://placehold.co/32x32/1f2937/a0aec0?text=${char.name.charAt(0)}`}" class="w-8 h-8 rounded-full object-cover shrink-0">
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-semibold truncate lg:whitespace-normal lg:overflow-visible">${char.name}</span>
+                        <div class="hidden lg:flex lg:flex-col text-xs ${statusColor}">${statusLines}</div>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs ${statusColor}">${char.bodyHp <= 0 ? '사망' : (char.x !== null ? `신체: ${char.bodyHp}/${char.maxBodyHp} | 정신: ${char.mentalHp}/${char.maxMentalHp}` : '미배치')}</span>
+                <div class="flex items-center gap-2 lg:hidden">
+                    <span class="text-xs ${statusColor}">${statusCompact}</span>
                 </div>
             </div>
         `;
