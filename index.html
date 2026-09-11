@@ -1244,6 +1244,7 @@
 
 
 <script src="firebase-config.js"></script>
+<script src="admin-config.js"></script>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -5639,3 +5640,18 @@ initializeTouchDragAndDrop();
 
     if (window.innerWidth < 1024) {
         charListContent.classList.add('hidden');
+        charListToggleIcon.classList.remove('rotate-180');
+    } else {
+        charListContent.classList.remove('hidden');
+    }
+window.addEventListener('beforeunload', async (event) => {
+    if (loggedInCharId) {
+        await updateDoc(doc(db, 'games', gameId, 'characters', loggedInCharId), { isLoggedIn: false });
+    }
+});
+</script>
+</body>
+</html>
+
+
+
