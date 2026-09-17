@@ -1789,22 +1789,6 @@ function listenForCombatTextEvents(gameId) {
         if (gameState !== 'STARTED' || !gameId) return;
         currentlyActingEnemyId = null;
 
-        // 아군 정신 내구도 회복 (전투 불능이 아닌 아군만)
-        const livingPCs = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-        if (livingPCs.length > 0) {
-            const batch = writeBatch(db);
-            for (const pc of livingPCs) {
-                const charRef = doc(db, 'games', gameId, 'characters', pc.id);
-                const newMentalHp = Math.min(pc.maxMentalHp, pc.mentalHp + 10);
-                if (newMentalHp > pc.mentalHp) {
-                    batch.update(charRef, { mentalHp: newMentalHp, mp: newMentalHp });
-                    pc.mentalHp = newMentalHp; pc.mp = newMentalHp;
-                }
-            }
-            await batch.commit();
-            await logAction(`💙 라운드 시작: 전투 가능한 아군 정신 내구도 10 회복.`, "system");
-        }
-
         // 전투 불능(신체 내구도 0)이었던 아군은 다음 라운드에 정신 내구도를 [최대 신체 내구도/10]만큼 차감한 채 최대 신체 내구도로 부활합니다. (적은 해당 없음)
         const incapacitatedPCs = characters.filter(c => c.type === 'PC' && c.bodyHp <= 0 && c.x !== null);
         if (incapacitatedPCs.length > 0) {
@@ -2138,9 +2122,9 @@ function listenForCombatTextEvents(gameId) {
             }
             if (bestMovePos.x !== boss.x || bestMovePos.y !== boss.y) {
                 await logAction(`🏃 ${boss.name}이(가) 이동합니다.`, "move");
+                await delay(1000);
                 await updateDoc(doc(db, 'games', gameId, 'characters', boss.id), { x: bestMovePos.x, y: bestMovePos.y });
                 boss.x = bestMovePos.x; boss.y = bestMovePos.y;
-                await delay(800);
             }
         }
 
@@ -2226,9 +2210,9 @@ function listenForCombatTextEvents(gameId) {
 
         if (bestMovePos.x !== currentEnemy.x || bestMovePos.y !== currentEnemy.y) {
             await logAction(`🏃 ${currentEnemy.name}이(가) 이동합니다.`, "move");
+            await delay(1000);
             await updateDoc(doc(db, 'games', gameId, 'characters', currentEnemy.id), { x: bestMovePos.x, y: bestMovePos.y });
             currentEnemy.x = bestMovePos.x; currentEnemy.y = bestMovePos.y;
-            await delay(800);
         }
 
         const updatedTarget = characters.find(c => c.id === target.id);
