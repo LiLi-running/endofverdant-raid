@@ -1,6 +1,10 @@
 // 오늘의 섬전 규칙 (seomjeon.html, characters.html, 테스트에서 함께 사용)
 // ※ firestore.rules 의 지갑 규칙과 반드시 같은 계산을 해야 합니다. 한쪽을 바꾸면 다른 쪽도 바꾸세요.
 
+// 결과 계산 방식이 바뀔 때마다 올립니다 (화면 아래에 표시되어, 새 버전이 적용됐는지 확인할 수 있습니다)
+// v2: 서버 시각의 밀리초 자리로 결과 결정
+export const SEOMJEON_RULES_VERSION = 2;
+
 export const START_BALANCE = 10;   // 캐릭터 생성 시 지급
 export const ATTEND_REWARD = 10;   // 매일 출석
 export const DAILY_SPINS = 5;      // 하루 기본 섬전 횟수
@@ -23,10 +27,11 @@ export function kstDayKey(ms = Date.now()) {
     return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
 }
 
-// 서버가 찍은 시각의 마이크로초로 결과를 정합니다 (Firestore Timestamp 의 nanoseconds 사용)
+// 서버가 찍은 시각의 밀리초(0~999)로 결과를 정합니다.
+// Firestore 서버 시각은 밀리초 단위까지만 의미가 있어(그 아래 자리는 0), 마이크로초를 쓰면 항상 같은 결과가 나옵니다.
 export function rollFromTimestamp(ts) {
     const nanos = ts?.nanoseconds ?? 0;
-    return Math.floor(nanos / 1000) % 100;
+    return Math.floor(nanos / 1000000) % 100;
 }
 export function outcomeFromRoll(r) {
     return OUTCOMES.find(o => r >= o.from && r < o.to);

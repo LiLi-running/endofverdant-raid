@@ -94,6 +94,7 @@
       <table class="odds" aria-label="확률표">
         <tbody id="odds"></tbody>
       </table>
+      <p class="muted" style="margin:10px 0 0" id="rules-version"></p>
       <p class="muted" style="margin:10px 0 0">매일 기본 5번, 한국 시간 자정에 출석과 횟수가 갱신됩니다. 결과는 서버가 기록한 시각(밀리초)으로 정해지며 되돌릴 수 없습니다.</p>
     </div>
   </section>
@@ -114,14 +115,15 @@
 <script src="firebase-config.js"></script>
 <script type="module">
 import { doc, getDoc, updateDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db, onReady, $, esc, money, toast, avatarHtml, errMsg, watchCharacters, watchMyCharIds, watchWallets, ensureWallets } from "./common.js";
+import { db, onReady, $, esc, money, toast, avatarHtml, errMsg, watchCharacters, watchMyCharIds, watchWallets, ensureWallets } from "./common.js?v=2";
 import { OUTCOMES, DAILY_SPINS, EXTRA_SPIN_COST, ATTEND_REWARD, kstDayKey, effectiveDaily, spinsLeft,
-         attendUpdate, buyUpdate, spinUpdate, settleUpdate } from "./seomjeon-rules.js";
+         attendUpdate, buyUpdate, spinUpdate, settleUpdate, SEOMJEON_RULES_VERSION } from "./seomjeon-rules.js?v=2";
 
 let uid = null, allChars = {}, myIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
 let selected = new URLSearchParams(location.search).get('char') || localStorage.getItem('seomjeon.char') || null;
 let busy = false, rankMode = 'balance';
 
+$('rules-version').textContent = `섬전 규칙 v${SEOMJEON_RULES_VERSION}`;
 $('odds').innerHTML = OUTCOMES.map(o => `<tr><td class="o-${o.key}"><b>${o.label}</b></td><td>${o.to - o.from}%</td><td>${o.net}</td></tr>`).join('');
 
 onReady((u) => {
@@ -131,6 +133,7 @@ onReady((u) => {
   watchWallets(w => { wallets = w; walletsLoaded = true; render(); settleStale(); });
 });
 setInterval(() => { renderPlay(); settleStale(); }, 30000); // 자정 갱신·방치된 정산 반영
+setInterval(() => { if (wallets[selected]?.pending && !busy) settleStale(); }, 5000); // 내 섬전이 정산 대기 중이면 자주 재시도
 
 const myChars = () => [...myIds].map(id => allChars[id]).filter(Boolean);
 
@@ -170,7 +173,7 @@ function renderPlay() {
   $('buy-btn').disabled = busy || w.balance < EXTRA_SPIN_COST || !!w.pending;
   const bet = parseInt($('bet').value, 10);
   $('spin-btn').disabled = busy || left <= 0 || w.balance < 1 || !!w.pending;
-  $('spin-btn').textContent = left <= 0 ? '오늘 기회 소진' : w.balance < 1 ? '달러 부족' : '섬전!';
+  $('spin-btn').textContent = w.pending ? '결과 정산 중…' : left <= 0 ? '오늘 기회 소진' : w.balance < 1 ? '달러 부족' : '섬전!';
   if (bet > w.balance) $('bet').value = Math.max(1, w.balance);
 }
 
@@ -236,7 +239,15 @@ $('spin-btn').onclick = () => withBusy(async () => {
     await new Promise(r => setTimeout(r, 700));
     settling.add(selected);
     let r;
-    try { r = await settle(selected); } finally { settling.delete(selected); }
+    try { r = await settle(selected); }
+    catch (e) {
+      // 섬전은 기록됐지만 결과 반영이 거부된 경우: 화면 파일과 서버 규칙의 버전이 다를 때 생깁니다.
+      console.warn('정산 거부', e?.code);
+      box.className = 'result';
+      box.innerHTML = '<div class="big">⏳</div><div class="sub">결과는 이미 정해졌고 곧 자동으로 반영됩니다.<br>계속 이 상태라면 페이지를 강력 새로고침(Ctrl+Shift+R)해 주세요.</div>';
+      return;
+    }
+    finally { settling.delete(selected); }
     if (r) showResult(r); else box.className = 'result';
   } catch (e) {
     box.className = 'result'; box.innerHTML = '<div class="sub">금액을 걸고 섬전!을 누르세요.</div>';

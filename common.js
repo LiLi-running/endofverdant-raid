@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot, query, orderBy, where, setDoc, writeBatch, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { newWallet } from "./seomjeon-rules.js";
+import { newWallet } from "./seomjeon-rules.js?v=2";
 import { maxHpOf } from "./duel-rules.js";
 import { charPasswordHash, migrateLegacyClaims } from "./password-hash.js";
 

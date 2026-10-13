@@ -109,9 +109,9 @@
 <script type="module">
 import { doc, collection, writeBatch, deleteDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { db, onReady, $, esc, safeUrl, money, toast, openModal, closeModal, avatarHtml, statChips, errMsg,
-         watchCharacters, watchMyCharIds, watchWallets, claimCharacter, ensureWallets } from "./common.js";
+         watchCharacters, watchMyCharIds, watchWallets, claimCharacter, ensureWallets } from "./common.js?v=2";
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, tag } from "./duel-rules.js";
-import { newWallet, effectiveDaily, spinsLeft } from "./seomjeon-rules.js";
+import { newWallet, effectiveDaily, spinsLeft } from "./seomjeon-rules.js?v=2";
 import { charPasswordHash } from "./password-hash.js";
 import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, emptyPoints, pointsUsed, finalValue, canAdd, validateRaid } from "./raid-build.js";
 
