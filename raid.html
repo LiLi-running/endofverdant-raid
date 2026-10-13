@@ -1266,6 +1266,7 @@
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES } from "./raid-data.js";
     import { DEFAULT_RAID_BUILD, pointsUsed, raidCharacterDoc, validateRaid } from "./raid-build.js";
+    import { charPasswordHash, pcPasswordHash } from "./password-hash.js";
     import { getFirestore, collection, onSnapshot, doc, updateDoc, query, getDocs, writeBatch, getDoc, setDoc, addDoc, serverTimestamp, orderBy, deleteDoc, deleteField, limit, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // Firebase 설정은 firebase-config.js 에서 불러옵니다 (공개되어도 되는 값이며, 보안은 firestore.rules 가 담당합니다)
@@ -1324,7 +1325,8 @@
         if (!gameId || !isAdmin) return;
         unsubscribeCharSecrets = onSnapshot(collection(db, 'games', gameId, 'charSecrets'), (snap) => {
             charSecrets = {};
-            snap.docs.forEach(d => { charSecrets[d.id] = d.data().password ?? ''; });
+            // 값은 비밀번호 해시입니다 (원래 비밀번호는 저장하지 않음)
+            snap.docs.forEach(d => { charSecrets[d.id] = d.data().hash ?? ''; });
         }, (err) => console.warn('charSecrets 구독 실패:', err?.code));
     }
     function stopCharSecretsListener() {
@@ -1332,21 +1334,21 @@
         unsubscribeCharSecrets = null;
         charSecrets = {};
     }
-    // 캐릭터 생성은 모두 여기로: password 필드는 공개 문서에서 빼고 비공개 문서로 저장합니다.
-    function setCharacterInBatch(batch, charRef, charData) {
-        const { password, id, ...publicData } = charData;
+    // 캐릭터 생성은 모두 여기로: 비밀번호는 공개 문서에서 빼고, 해시로만 비공개 문서에 저장합니다.
+    // charData 에는 password(원문) 또는 passwordHash(설정 파일·복사본) 중 하나가 올 수 있습니다.
+    async function setCharacterInBatch(batch, charRef, charData) {
+        const { password, passwordHash, id, ...publicData } = charData;
         batch.set(charRef, publicData);
         // 공유 캐릭터는 캐릭터 페이지의 비밀번호로 로그인하므로 게임별 비밀번호를 만들지 않습니다.
         if (publicData.type === 'PC' && !publicData.sharedCharId) {
-            batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), {
-                password: (password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD
-            });
+            const hash = passwordHash || await pcPasswordHash((password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD);
+            batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), { hash });
         }
     }
     async function addCharacter(charData) {
         const batch = writeBatch(db);
         const charRef = doc(collection(db, 'games', gameId, 'characters'));
-        setCharacterInBatch(batch, charRef, charData);
+        await setCharacterInBatch(batch, charRef, charData);
         await batch.commit();
         return charRef;
     }
@@ -1357,19 +1359,26 @@
             if (gameDocData && 'adminPassword' in gameDocData) {
                 await updateDoc(doc(db, 'games', gameId), { adminPassword: deleteField() });
             }
+            // 1) 아주 예전 방식: 캐릭터 문서에 남은 비밀번호 → 해시로 옮기고 지움
             const legacy = characters.filter(c => 'password' in c);
-            if (legacy.length === 0) return;
             for (let i = 0; i < legacy.length; i += 200) {
                 const batch = writeBatch(db);
-                legacy.slice(i, i + 200).forEach(c => {
-                    if (c.type === 'PC') {
-                        batch.set(doc(db, 'games', gameId, 'charSecrets', c.id), { password: c.password || DEFAULT_PC_PASSWORD });
+                for (const c of legacy.slice(i, i + 200)) {
+                    if (c.type === 'PC' && !c.sharedCharId) {
+                        batch.set(doc(db, 'games', gameId, 'charSecrets', c.id), { hash: await pcPasswordHash(c.password || DEFAULT_PC_PASSWORD) });
                     }
                     batch.update(doc(db, 'games', gameId, 'characters', c.id), { password: deleteField() });
-                });
+                }
                 await batch.commit();
             }
-            console.log(`비밀번호 ${legacy.length}건을 비공개 저장소로 옮겼습니다.`);
+            // 2) 평문으로 저장된 게임별 PC 비밀번호 → 해시
+            const secrets = await getDocs(collection(db, 'games', gameId, 'charSecrets'));
+            const plain = secrets.docs.filter(d => 'password' in d.data());
+            for (const d of plain) await setDoc(d.ref, { hash: await pcPasswordHash(d.data().password || DEFAULT_PC_PASSWORD) });
+            // 3) 비밀번호 원문이 담긴 예전 로그인 기록 삭제 (해당 플레이어는 다시 로그인)
+            const logins = await getDocs(collection(db, 'games', gameId, 'pcLogins'));
+            for (const d of logins.docs.filter(d => 'password' in d.data())) await deleteDoc(d.ref);
+            if (legacy.length || plain.length) console.log(`비밀번호 ${legacy.length + plain.length}건을 해시로 바꿨습니다.`);
         } catch (e) { console.error('비밀번호 이전 실패:', e); }
     }
 
@@ -3304,7 +3313,9 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     if (targetChar && (password || targetChar.sharedCharId)) {
         try {
             // 비밀번호 비교는 보안 규칙이 서버에서 합니다. 틀리면 쓰기가 거부됩니다.
-            await setDoc(doc(db, 'games', gameId, 'pcLogins', userId), { charId, password, at: serverTimestamp() });
+            // 원래 비밀번호는 보내지 않고 해시만 보냅니다. 공유 캐릭터는 캐릭터 비밀번호 해시와 비교합니다.
+            const hash = !password ? '' : targetChar.sharedCharId ? await charPasswordHash(targetChar.sharedCharId, password) : await pcPasswordHash(password);
+            await setDoc(doc(db, 'games', gameId, 'pcLogins', userId), { charId, hash, at: serverTimestamp() });
             pcLoginOk = true;
         } catch (e) {
             if (e?.code !== 'permission-denied') console.error('PC 로그인 오류:', e);
@@ -3399,7 +3410,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         });
     }
     async function loginShared(charId, name) {
-        await setDoc(doc(db, 'games', gameId, 'pcLogins', userId), { charId, password: '', at: serverTimestamp() });
+        await setDoc(doc(db, 'games', gameId, 'pcLogins', userId), { charId, hash: '', at: serverTimestamp() });
         await finishPCLogin(charId, characters.find(c => c.id === charId) || { name });
     }
     document.getElementById('raid-join-btn').addEventListener('click', openRaidJoinModal);
@@ -3887,7 +3898,7 @@ function renderSkillButtons(selectedChar) {
     };
     
     try {
-        await addCharacter({ ...newCharData, password: charSecrets[charToCopy.id] });
+        await addCharacter({ ...newCharData, passwordHash: charSecrets[charToCopy.id] || undefined });
 
         await logAction(`✨ 관리자가 '${charToCopy.name}' 캐릭터를 복사했습니다.`, "admin");
         closeModal('profile-modal'); // 현재 프로필 창 닫기
@@ -4246,7 +4257,7 @@ function renderLoginStatus() {
                     <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-4">
                         <div><label class="text-gray-400">이름</label><input id="edit-name" class="form-input mt-1" value="${character.name}"></div>
                         <div><label class="text-gray-400">이미지 URL</label><input id="edit-image-url" class="form-input mt-1" value="${character.imageUrl || ''}"></div>
-                        ${character.type === 'PC' && character.sharedCharId ? `<div class="text-sm text-gray-400">공유 캐릭터입니다. 로그인 비밀번호는 캐릭터 페이지에서 바꿉니다.</div>` : ''}${character.type === 'PC' && !character.sharedCharId ? `<div><label class="text-gray-400">PC 비밀번호</label><input id="edit-password" type="text" class="form-input mt-1" value="${charSecrets[character.id] ?? DEFAULT_PC_PASSWORD}"></div>` : ''}
+                        ${character.type === 'PC' && character.sharedCharId ? `<div class="text-sm text-gray-400">공유 캐릭터입니다. 로그인 비밀번호는 캐릭터 페이지에서 바꿉니다.</div>` : ''}${character.type === 'PC' && !character.sharedCharId ? `<div><label class="text-gray-400">PC 비밀번호</label><input id="edit-password" type="text" class="form-input mt-1" value="" placeholder="바꿀 때만 입력 (비우면 유지)" autocomplete="off"></div>` : ''}
                         <div class="grid grid-cols-3 gap-4">
                             <div><label class="text-gray-400">신체 내구도</label><input id="edit-bodyHp" type="number" class="form-input mt-1" value="${character.bodyHp ?? character.hp ?? 100}"></div>
                             <div><label class="text-gray-400">최대 신체 내구도</label><input id="edit-maxBodyHp" type="number" class="form-input mt-1" value="${character.maxBodyHp ?? character.maxHp ?? 100}"></div>
@@ -4311,7 +4322,7 @@ function renderLoginStatus() {
                 if (gameId) {
                     await updateDoc(doc(db, 'games', gameId, 'characters', character.id), updates);
                     if (newPcPassword !== null) {
-                        await setDoc(doc(db, 'games', gameId, 'charSecrets', character.id), { password: newPcPassword || DEFAULT_PC_PASSWORD });
+                        if (newPcPassword) await setDoc(doc(db, 'games', gameId, 'charSecrets', character.id), { hash: await pcPasswordHash(newPcPassword) });
                     }
                 }
                 openProfileModal({...character, ...updates}, false);
@@ -5001,7 +5012,7 @@ gameBoard.addEventListener('drop', async e => {
                 isAdminMoveAllowed: isAdminMoveAllowed
             },
             boardTiles: boardTiles,
-            characters: characters.map(({ id, ...char }) => (char.type === 'PC' && !char.sharedCharId ? { ...char, password: charSecrets[id] ?? DEFAULT_PC_PASSWORD } : char)) // id는 Firestore에서 자동 생성되므로 제외
+            characters: characters.map(({ id, ...char }) => (char.type === 'PC' && !char.sharedCharId && charSecrets[id] ? { ...char, passwordHash: charSecrets[id] } : char)) // id는 Firestore에서 자동 생성되므로 제외
         };
 
         // 2. 객체를 JSON 문자열로 변환합니다.
@@ -5051,10 +5062,10 @@ gameBoard.addEventListener('drop', async e => {
 
                         // 2. 파일에서 읽어온 새 캐릭터 데이터를 추가합니다.
                         const addBatch = writeBatch(db);
-                        settings.characters.forEach(charData => {
+                        for (const charData of settings.characters) {
                             const newCharRef = doc(collection(db, "games", gameId, "characters"));
-                            setCharacterInBatch(addBatch, newCharRef, charData);
-                        });
+                            await setCharacterInBatch(addBatch, newCharRef, charData);
+                        }
                         await addBatch.commit();
 
                         // 3. 나머지 게임 설정을 업데이트합니다.

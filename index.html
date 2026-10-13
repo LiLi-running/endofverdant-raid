@@ -17,7 +17,9 @@
   .menu a:hover, .menu a:focus-visible { background: var(--nav-btn-hover); color: var(--accent); transform: translateX(3px); outline: none; }
   .menu a small { display: block; font-weight: 500; font-size: 12px; color: var(--text-3); margin-top: 4px; }
   .menu a.admin { background: transparent; border-style: dashed; font-weight: 700; }
-  .side-foot { margin-top: auto; display: flex; justify-content: center; padding-top: 20px; }
+  .side-foot { margin-top: auto; display: flex; justify-content: center; align-items: center; gap: 14px; padding-top: 20px; }
+  .privacy-link { color: var(--text-3); font-size: 13px; text-decoration: none; }
+  .privacy-link:hover { color: var(--accent); }
   main { padding: 40px; }
   .hero { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 28px; padding: 60px; box-shadow: var(--shadow); backdrop-filter: blur(2px); }
   .eyebrow { color: var(--accent-soft); font-size: 13px; letter-spacing: .08em; margin: 0 0 6px; font-weight: 600; }
@@ -55,7 +57,7 @@
       <a href="characters.html">캐릭터<small>모든 콘텐츠 공용</small></a>
       <a href="admin.html" class="admin">관리자 설정</a>
     </nav>
-    <div class="side-foot"><button type="button" data-theme-toggle></button></div>
+    <div class="side-foot"><a href="privacy.html" class="privacy-link">개인정보 안내</a><button type="button" data-theme-toggle></button></div>
   </aside>
   <main>
     <section class="hero">

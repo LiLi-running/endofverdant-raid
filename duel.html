@@ -57,6 +57,7 @@
     <div class="card">
       <h2>전투방 <button id="create-duel-btn" class="btn-primary">새 전투방 만들기</button></h2>
       <div id="duel-list" class="list"><p class="muted">불러오는 중...</p></div>
+      <p class="muted" style="margin-top:14px">전투방과 전투 기록은 누구나 볼 수 있습니다. <a href="privacy.html" style="color:var(--accent)">개인정보 안내</a></p>
     </div>
     <div class="card">
       <h2>내 캐릭터 <a href="characters.html#new" class="btn-primary" style="text-decoration:none;padding:9px 14px;border-radius:6px">캐릭터 만들기</a></h2>
@@ -126,6 +127,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, where, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
          writeBatch, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { charPasswordHash, migrateLegacyClaims } from "./password-hash.js";
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, rollDie,
          resolveRound, firstChoiceLog, startLog, otherSlot, tag } from "./duel-rules.js";
 
@@ -207,6 +209,7 @@ function listenCharacters() {
 }
 function listenMyClaims() {
   onSnapshot(query(collection(db, 'duelClaims'), where('uid', '==', uid)), snap => {
+    migrateLegacyClaims(db, uid, snap.docs, { doc, writeBatch, setDoc, deleteDoc, serverTimestamp });
     myCharIds = new Set(snap.docs.map(d => d.data().charId));
     renderMyChars();
     if (currentDuel) renderRoom();
@@ -243,7 +246,7 @@ function openClaim(charId = null) {
       const id = $('claim-char').value, password = $('claim-password').value;
       if (!id || !password) { $('claim-error').textContent = '캐릭터와 비밀번호를 입력하세요.'; return; }
       try {
-        await setDoc(doc(db, 'duelClaims', `${uid}_${id}`), { uid, charId: id, password, at: serverTimestamp() });
+        await setDoc(doc(db, 'duelClaims', `${uid}_${id}`), { uid, charId: id, hash: await charPasswordHash(id, password), at: serverTimestamp() });
         myCharIds.add(id);
         closeModal('claim-modal'); toast('불러왔습니다.'); res(true);
       } catch (e) { $('claim-error').textContent = e?.code === 'permission-denied' ? '비밀번호가 맞지 않습니다.' : errMsg(e); }

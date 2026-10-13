@@ -1,9 +1,10 @@
 // 공용 Firebase 연결과 캐릭터·지갑 도우미 (characters.html, seomjeon.html)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, collection, onSnapshot, query, orderBy, where, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, collection, onSnapshot, query, orderBy, where, setDoc, writeBatch, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { newWallet } from "./seomjeon-rules.js";
 import { maxHpOf } from "./duel-rules.js";
+import { charPasswordHash, migrateLegacyClaims } from "./password-hash.js";
 
 export const app = initializeApp(window.FIREBASE_CONFIG);
 export const db = getFirestore(app);
@@ -52,6 +53,7 @@ export function watchCharacters(cb) {
 }
 export function watchMyCharIds(uid, cb) {
   return onSnapshot(query(collection(db, 'duelClaims'), where('uid', '==', uid)), snap => {
+    migrateLegacyClaims(db, uid, snap.docs, { doc, writeBatch, setDoc, deleteDoc, serverTimestamp });
     cb(new Set(snap.docs.map(d => d.data().charId)));
   }, e => console.error('내 캐릭터 오류', e));
 }
@@ -62,8 +64,9 @@ export function watchWallets(cb) {
 }
 
 /** 비밀번호로 이 브라우저에 캐릭터를 등록합니다. 틀리면 permission-denied. */
-export function claimCharacter(uid, charId, password) {
-  return setDoc(doc(db, 'duelClaims', `${uid}_${charId}`), { uid, charId, password, at: serverTimestamp() });
+export async function claimCharacter(uid, charId, password) {
+  const hash = await charPasswordHash(charId, password);
+  return setDoc(doc(db, 'duelClaims', `${uid}_${charId}`), { uid, charId, hash, at: serverTimestamp() });
 }
 
 /** 지갑이 없는 내 캐릭터(기능 추가 전에 만든 캐릭터)에 지갑을 만들어 줍니다 (+10달러). */

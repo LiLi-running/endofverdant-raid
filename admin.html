@@ -77,6 +77,11 @@
       <p class="muted mb-3">플레이어가 캐릭터 페이지에서 포지션을 고르고 정수를 나눌 때 쓰는 규칙입니다. 바꾸면 이미 저장된 설정 중 새 규칙에 맞지 않는 캐릭터는 다시 저장해야 레이드에 참가할 수 있습니다. 포지션별 스킬은 기본 스킬 목록을 따릅니다.</p>
       <div id="build-editor" class="overflow-x-auto"><p class="muted">불러오는 중...</p></div>
     </div>
+    <div class="panel md:col-span-2">
+      <h2 class="sec-title">비밀번호 보관 상태</h2>
+      <p class="muted mb-3">모든 비밀번호는 해시로만 저장되어 관리자도 원래 비밀번호를 볼 수 없습니다. 관리자 페이지를 열 때마다 예전 방식(원문)으로 남은 비밀번호를 자동으로 해시로 바꿉니다.</p>
+      <div id="legacy-claims"><p class="muted">확인 중...</p></div>
+    </div>
     <div class="panel self-start">
       <h2 class="sec-title">캐릭터</h2>
       <div id="duel-char-list" class="flex flex-col gap-2"><p class="muted">불러오는 중...</p></div>
@@ -107,6 +112,7 @@ import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, getDo
 import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES } from "./raid-data.js";
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, tag } from "./duel-rules.js";
 import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, finalValue, validateRaid, raidCharacterDoc } from "./raid-build.js";
+import { charPasswordHash, pcPasswordHash } from "./password-hash.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -190,6 +196,7 @@ function enterAdmin() {
   loadRaidGames();
   listenDuelAdmin();
   loadRaidBuild().catch(e => { console.error(e); $('build-editor').innerHTML = `<p class="muted">${errMsg(e)}</p>`; });
+  migrateAllSecrets();
   const pre = new URLSearchParams(location.search).get('raid');
   if (pre) selectRaidGame(pre.toUpperCase());
 }
@@ -239,20 +246,20 @@ $('raid-create-btn').onclick = async () => {
 async function logAction(message, type = 'admin') {
   if (gameId) await addDoc(collection(db, 'games', gameId, 'logs'), { message, type, timestamp: serverTimestamp() });
 }
-function setCharacterInBatch(batch, charRef, charData) {
-  const { password, id, ...publicData } = charData;
+// 비밀번호는 해시로만 저장합니다. charData 에는 password(원문) 또는 passwordHash(설정 파일) 중 하나가 올 수 있습니다.
+async function setCharacterInBatch(batch, charRef, charData) {
+  const { password, passwordHash, id, ...publicData } = charData;
   batch.set(charRef, publicData);
   if (publicData.type === 'PC' && !publicData.sharedCharId) {
-    batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), {
-      password: (password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD
-    });
+    const hash = passwordHash || await pcPasswordHash((password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD);
+    batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), { hash });
   }
 }
 async function addCharacter(charData) {
   const batch = writeBatch(db);
   // 공유 캐릭터는 문서 ID를 캐릭터 ID로 맞춰 한 게임에 한 번만 들어가게 합니다.
   const ref = charData.sharedCharId ? doc(db, 'games', gameId, 'characters', charData.sharedCharId) : doc(collection(db, 'games', gameId, 'characters'));
-  setCharacterInBatch(batch, ref, charData);
+  await setCharacterInBatch(batch, ref, charData);
   await batch.commit();
 }
 
@@ -276,25 +283,58 @@ function selectRaidGame(id) {
     renderRaidChars();
   }));
   unsubs.push(onSnapshot(collection(db, 'games', id, 'charSecrets'), snap => {
-    charSecrets = {}; snap.docs.forEach(d => { charSecrets[d.id] = d.data().password ?? ''; });
+    charSecrets = {}; snap.docs.forEach(d => { charSecrets[d.id] = d.data().hash ?? ''; }); // 해시
   }));
 }
 
-// 예전 방식으로 공개 문서에 남은 비밀번호를 비공개 위치로 이전
-async function migrateLegacy() {
-  try {
-    if (game && 'adminPassword' in game) await updateDoc(doc(db, 'games', gameId), { adminPassword: deleteField() });
-    const snap = await getDocs(collection(db, 'games', gameId, 'characters'));
-    const legacy = snap.docs.filter(d => 'password' in d.data());
-    if (!legacy.length) return;
+// 한 게임 안의 예전 비밀번호를 모두 해시로 바꾸고, 원문이 담긴 로그인 기록을 지웁니다.
+async function migrateGameSecrets(id, gameData) {
+  let n = 0;
+  if (gameData && 'adminPassword' in gameData) await updateDoc(doc(db, 'games', id), { adminPassword: deleteField() });
+  const chars = await getDocs(collection(db, 'games', id, 'characters'));
+  for (const d of chars.docs.filter(d => 'password' in d.data())) {
+    const c = d.data();
     const batch = writeBatch(db);
-    legacy.forEach(d => {
-      const c = d.data();
-      if (c.type === 'PC') batch.set(doc(db, 'games', gameId, 'charSecrets', d.id), { password: c.password || DEFAULT_PC_PASSWORD });
-      batch.update(d.ref, { password: deleteField() });
-    });
-    await batch.commit();
-  } catch (e) { console.error('비밀번호 이전 실패', e); }
+    if (c.type === 'PC' && !c.sharedCharId) batch.set(doc(db, 'games', id, 'charSecrets', d.id), { hash: await pcPasswordHash(c.password || DEFAULT_PC_PASSWORD) });
+    batch.update(d.ref, { password: deleteField() });
+    await batch.commit(); n++;
+  }
+  const secrets = await getDocs(collection(db, 'games', id, 'charSecrets'));
+  for (const d of secrets.docs.filter(d => 'password' in d.data())) { await setDoc(d.ref, { hash: await pcPasswordHash(d.data().password || DEFAULT_PC_PASSWORD) }); n++; }
+  const logins = await getDocs(collection(db, 'games', id, 'pcLogins'));
+  for (const d of logins.docs.filter(d => 'password' in d.data())) { await deleteDoc(d.ref); n++; }
+  return n;
+}
+async function migrateLegacy() {
+  try { await migrateGameSecrets(gameId, game); } catch (e) { console.error('비밀번호 전환 실패', e); }
+}
+// 관리자 로그인 때 사이트 전체의 평문 비밀번호를 해시로 바꿉니다.
+// 캐릭터 비밀번호를 해시로 바꿔도, 각 기기의 예전 등록은 그 기기를 다음에 열 때 스스로 해시로 바뀌므로 다시 입력할 필요가 없습니다.
+async function migrateAllSecrets() {
+  let n = 0;
+  try {
+    const games = await getDocs(collection(db, 'games'));
+    for (const g of games.docs) n += await migrateGameSecrets(g.id, g.data());
+    const secrets = await getDocs(collection(db, 'duelCharSecrets'));
+    for (const d of secrets.docs.filter(d => 'password' in d.data())) { await setDoc(d.ref, { hash: await charPasswordHash(d.id, d.data().password) }); n++; }
+  } catch (e) { console.error('비밀번호 전환 실패', e); }
+  if (n) toast(`예전 방식 비밀번호 ${n}건을 해시로 바꿨습니다.`);
+  renderLegacyClaims();
+}
+// 아직 해시로 바뀌지 않은 기기 등록(그 기기를 한동안 열지 않은 경우) 확인·정리
+async function renderLegacyClaims() {
+  const el = $('legacy-claims'); if (!el) return;
+  try {
+    const snap = await getDocs(collection(db, 'duelClaims'));
+    const legacy = snap.docs.filter(d => 'password' in d.data());
+    if (!legacy.length) { el.innerHTML = `<p class="muted">비밀번호 원문이 남은 기기 등록이 없습니다.</p>`; return; }
+    el.innerHTML = `<p class="text-sm mb-2">비밀번호 원문이 남은 기기 등록 <b>${legacy.length}건</b>. 해당 기기에서 사이트를 열면 자동으로 해시로 바뀝니다. 오래 쓰지 않는 기기라면 지울 수 있으며, 지우면 그 기기에서는 캐릭터를 다시 불러와야 합니다.</p>
+      <button id="legacy-claims-del" class="px-3 py-1.5 text-sm" style="background:#7f1d1d">원문이 남은 등록 지우기</button>`;
+    $('legacy-claims-del').onclick = () => confirmDanger('기기 등록 정리', `${legacy.length}건을 지웁니다. 해당 기기에서는 캐릭터를 비밀번호로 다시 불러와야 합니다.`, async () => {
+      for (const d of legacy) await deleteDoc(d.ref);
+      renderLegacyClaims();
+    }, '지우기');
+  } catch (e) { el.innerHTML = `<p class="muted">${errMsg(e)}</p>`; }
 }
 
 const SECTION_COLOR = { '#FBBF24': 'var(--warn)', '#4ADE80': 'var(--accent)', '#F87171': 'var(--danger)' };
@@ -380,11 +420,11 @@ function renderRaidChars() {
     <button data-del="${esc(c.id)}" class="text-xs px-3 py-1" style="background:#7f1d1d">삭제</button></div>`).join('');
   el.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => {
     const c = characters.find(x => x.id === b.dataset.pw);
-    showModal(`${c.name} 비밀번호`, `<input id="pc-pw" class="form-input" value="${esc(charSecrets[c.id] ?? DEFAULT_PC_PASSWORD)}">`, [
+    showModal(`${c.name} 비밀번호 재설정`, `<p class="mb-2 text-sm">비밀번호는 해시로만 저장되어 기존 값은 볼 수 없습니다. 새 비밀번호를 정하세요.</p><input id="pc-pw" class="form-input" autocomplete="off">`, [
       { text: '취소' },
       { text: '저장', bg: '#16a34a', onClick: async () => {
         const v = $('pc-pw').value; if (!v) return modalError('비밀번호를 입력하세요.');
-        await setDoc(doc(db, 'games', gameId, 'charSecrets', c.id), { password: v }); toast('저장했습니다.');
+        await setDoc(doc(db, 'games', gameId, 'charSecrets', c.id), { hash: await pcPasswordHash(v) }); toast('저장했습니다.');
       } }]);
   });
   el.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => {
@@ -571,7 +611,7 @@ async function saveSettingsToFile() {
   const data = {
     gameSettings: { skills: SKILLS, maxRounds: game.maxRounds || 0, boardBackgroundImage: game.boardBackgroundImage || '', pageBackgroundImage: game.pageBackgroundImage || '', isAdminMoveAllowed: game.isAdminMoveAllowed !== false },
     boardTiles: (await getDoc(doc(db, 'games', gameId, 'board', 'tiles'))).data()?.tiles || {},
-    characters: characters.map(({ id, ...c }) => c.type === 'PC' && !c.sharedCharId ? { ...c, password: charSecrets[id] ?? DEFAULT_PC_PASSWORD } : c)
+    characters: characters.map(({ id, ...c }) => c.type === 'PC' && !c.sharedCharId && charSecrets[id] ? { ...c, passwordHash: charSecrets[id] } : c)
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -591,7 +631,7 @@ $('load-settings-input').onchange = (e) => {
       await deleteCollection(['games', gameId, 'characters'], (batch, d) => batch.delete(doc(db, 'games', gameId, 'charSecrets', d.id)));
       for (let i = 0; i < settings.characters.length; i += 200) {
         const batch = writeBatch(db);
-        settings.characters.slice(i, i + 200).forEach(c => setCharacterInBatch(batch, doc(collection(db, 'games', gameId, 'characters')), c));
+        for (const c of settings.characters.slice(i, i + 200)) await setCharacterInBatch(batch, doc(collection(db, 'games', gameId, 'characters')), c);
         await batch.commit();
       }
       const { adminPassword: _ignored, ...safe } = settings.gameSettings;
@@ -825,11 +865,11 @@ function renderDuelChars() {
     el.querySelectorAll('[data-dedit]').forEach(b => b.onclick = () => editDuelChar(b.dataset.dedit));
     el.querySelectorAll('[data-dpw]').forEach(b => b.onclick = () => {
       const c = duelChars.find(x => x.id === b.dataset.dpw);
-      showModal(`${c.name} 비밀번호 재설정`, `<p class="mb-2 text-sm">새 비밀번호를 정하면 기존 기기들은 다시 불러와야 합니다.</p><input id="dpw" class="form-input">`, [
+      showModal(`${c.name} 비밀번호 재설정`, `<p class="mb-2 text-sm">비밀번호는 해시로만 저장되어 기존 값은 볼 수 없습니다. 새 비밀번호를 정하면 이 캐릭터를 쓰던 기기들은 새 비밀번호로 다시 불러와야 합니다.</p><input id="dpw" class="form-input" autocomplete="off">`, [
         { text: '취소' },
         { text: '저장', bg: '#16a34a', onClick: async () => {
           const v = $('dpw').value; if (!v) return modalError('비밀번호를 입력하세요.');
-          await setDoc(doc(db, 'duelCharSecrets', c.id), { password: v }); toast('재설정했습니다.');
+          await setDoc(doc(db, 'duelCharSecrets', c.id), { hash: await charPasswordHash(c.id, v) }); toast('재설정했습니다.');
         } }]);
     });
     el.querySelectorAll('[data-money]').forEach(b => b.onclick = () => {

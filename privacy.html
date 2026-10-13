@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개인정보 안내 · 녹채반역</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="site.css">
+<style>
+  main { max-width: 860px; }
+  .doc h2 { font-size: 18px; margin: 28px 0 10px; }
+  .doc h2:first-of-type { margin-top: 4px; }
+  .doc p, .doc li { color: var(--text-2); line-height: 1.8; font-size: 15px; }
+  .doc ul { padding-left: 20px; margin: 6px 0; }
+  .doc b { color: var(--text); }
+  .lead { font-size: 16px !important; }
+  .table-wrap { overflow-x: auto; margin: 8px 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--text-2); line-height: 1.6; }
+  th { color: var(--text); font-weight: 700; background: var(--panel-2); }
+  .note { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border-left: 3px solid var(--accent); }
+  .updated { color: var(--text-3); font-size: 13px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="index.html">END OF VERDANT</a>
+  <h1>개인정보 안내</h1>
+  <nav><a href="characters.html">캐릭터</a><a href="index.html">시작 페이지</a><button type="button" data-theme-toggle></button></nav>
+</header>
+<main>
+  <article class="card doc">
+    <p class="lead">이 사이트는 커뮤니티 게임 진행에 필요한 최소한의 정보만 다룹니다. <b>실명, 이메일, 전화번호, 마스토돈 계정은 받지 않습니다.</b></p>
+
+    <h2>1. 저장하는 정보</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>정보</th><th>언제</th><th>왜</th></tr></thead>
+      <tbody>
+        <tr><td>익명 사용자 ID (무작위 문자열)</td><td>처음 방문할 때 브라우저마다 자동 발급</td><td>내 캐릭터·전투 참가·로그인 상태 구분</td></tr>
+        <tr><td>캐릭터 이름, 이미지 주소, 1:1 스탯, 레이드 포지션·정수 분배</td><td>캐릭터를 만들거나 수정할 때</td><td>게임 진행과 화면 표시</td></tr>
+        <tr><td>캐릭터 비밀번호의 <b>해시</b></td><td>캐릭터를 만들거나 비밀번호를 바꿀 때, 다른 기기에서 불러올 때</td><td>본인 확인</td></tr>
+        <tr><td>달러, 섬전 점수·결과 횟수, 출석·섬전 시각</td><td>출석, 섬전, 기회 추가</td><td>오늘의 섬전과 순위</td></tr>
+        <tr><td>1:1 전투 기록 (참가자 익명 ID, 판정 결과)</td><td>전투방 생성·참가·진행</td><td>전투 진행과 관전</td></tr>
+        <tr><td>레이드 게임 기록과 로그인 상태</td><td>레이드 진행·로그인</td><td>레이드 진행</td></tr>
+      </tbody>
+    </table></div>
+    <p>그 밖에 테마 선택, 마지막으로 들어간 레이드 게임, 섬전에서 고른 캐릭터, 로그인 유지 정보가 <b>사용 중인 브라우저 안에만</b> 저장됩니다. 서버로는 보내지 않습니다.</p>
+
+    <h2>2. 비밀번호</h2>
+    <ul>
+      <li>캐릭터·레이드 비밀번호는 <b>원래 글자를 저장하지 않고, 되돌릴 수 없는 해시(SHA-256)로만</b> 저장합니다. 관리자도 원래 비밀번호를 볼 수 없습니다.</li>
+      <li>비밀번호를 잊으면 관리자가 새 비밀번호로 재설정해 드릴 수 있습니다.</li>
+      <li>짧거나 흔한 비밀번호는 해시라도 추측될 수 있습니다. <b>다른 사이트에서 쓰는 비밀번호는 사용하지 마세요.</b></li>
+    </ul>
+
+    <h2>3. 누가 볼 수 있나</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>대상</th><th>볼 수 있는 정보</th></tr></thead>
+      <tbody>
+        <tr><td><b>모든 방문자</b></td><td>캐릭터 이름·이미지·스탯·레이드 설정, 달러와 섬전 점수·출석 시각(순위), 1:1 전투방과 전투 기록</td></tr>
+        <tr><td><b>레이드 게임 코드를 아는 사람</b></td><td>그 게임의 캐릭터 상태와 진행 기록</td></tr>
+        <tr><td><b>본인 브라우저</b></td><td>위 정보 + 이 브라우저에 등록한 캐릭터 목록</td></tr>
+        <tr><td><b>사이트 관리자</b></td><td>위 정보 + 레이드 게임 목록, 비밀번호 해시(원래 비밀번호는 볼 수 없음), 기기 등록 목록</td></tr>
+        <tr><td><b>Firebase 프로젝트 소유자</b></td><td>저장된 모든 데이터와 익명 계정 목록(생성·최근 접속 시각)</td></tr>
+      </tbody>
+    </table></div>
+    <p>익명 ID만으로는 누구인지 알 수 없지만, 같은 브라우저로 참가한 전투들은 같은 ID로 이어져 보입니다.</p>
+
+    <h2>4. 사용 범위와 보관</h2>
+    <ul>
+      <li>저장한 정보는 본인 확인, 전투·레이드 진행, 순위 표시에만 씁니다. <b>분석 도구, 광고, 외부 제공은 없습니다.</b></li>
+      <li>정보는 자동으로 지워지지 않습니다. 캐릭터 페이지에서 직접 캐릭터를 삭제하면 캐릭터, 비밀번호 해시, 지갑이 함께 지워집니다. 이미 진행된 전투·레이드 기록은 남습니다.</li>
+      <li>기록 삭제를 원하시면 관리자에게 요청해 주세요.</li>
+    </ul>
+
+    <h2>5. 사이트 밖의 서비스</h2>
+    <p>페이지를 열 때 아래 서비스가 방문자의 <b>IP 주소와 브라우저 정보</b>를 받습니다. 각 서비스의 정책을 따르며, 이 사이트에서 막을 수 없습니다.</p>
+    <ul>
+      <li>GitHub Pages (사이트 호스팅)</li>
+      <li>Google Firebase (데이터 저장·익명 로그인), Google Fonts (글꼴)</li>
+      <li>jsDelivr (Pretendard 글꼴), Tailwind CDN (레이드·관리자 화면 스타일)</li>
+      <li>캐릭터·보스 이미지가 올라가 있는 사이트 (imgur 등, 이미지 주소의 호스트)</li>
+    </ul>
+
+    <p class="note">궁금한 점이나 삭제 요청은 녹채반역 운영진에게 문의해 주세요.</p>
+    <p class="updated">최종 수정: 2026년 10월 13일</p>
+  </article>
+</main>
+</body>
+</html>
