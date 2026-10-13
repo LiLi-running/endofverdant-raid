@@ -1207,7 +1207,7 @@
     <div id="profile-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-50 hidden"><div id="modal-content" class="w-full max-w-[900px]"></div></div>
     <div id="custom-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-50 hidden"><div id="custom-modal-content" class="modal-content rounded-md shadow-2xl p-8 w-full max-w-sm"><h3 id="custom-modal-title" class="text-xl font-bold mb-4 font-title"></h3><p id="custom-modal-message" class="mb-6"></p><div id="custom-modal-buttons" class="flex justify-end gap-4"></div></div></div>
     <div id="admin-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[60] hidden"><div id="admin-modal-content" class="modal-content rounded-md shadow-2xl p-8 w-full max-w-3xl max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-bold font-title" style="color: var(--accent-primary);">관리자 패널</h3><button id="close-admin-modal-btn" class="hover:text-white text-3xl leading-none">&times;</button></div><div id="admin-skill-list" class="space-y-4"></div></div></div>
-    <div id="admin-password-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[70] hidden">
+    <div id="admin-password-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[110] hidden">
         <div class="modal-content rounded-md shadow-2xl p-8 w-full max-w-sm">
             <h3 class="text-xl font-bold mb-4 font-title">관리자 인증</h3>
             <p class="mb-4 text-gray-400">관리자 비밀번호를 입력하세요.</p>
@@ -1244,18 +1244,102 @@
 
 
 <script src="firebase-config.js"></script>
-<script src="admin-config.js"></script>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore, collection, onSnapshot, doc, updateDoc, query, getDocs, writeBatch, getDoc, setDoc, addDoc, serverTimestamp, orderBy, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // Firebase 설정은 firebase-config.js 에서 불러옵니다 (GitHub에 올라가지 않습니다)
+    // Firebase 설정은 firebase-config.js 에서 불러옵니다 (공개되어도 되는 값이며, 보안은 firestore.rules 가 담당합니다)
     const firebaseConfig = window.FIREBASE_CONFIG;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+
+    // --- 보안 헬퍼 ---
+    // 관리자 비밀번호는 코드나 게임 문서에 저장하지 않습니다.
+    // Firestore의 siteSecrets/admin 문서(아무도 읽을 수 없음)에 해시로만 저장되고,
+    // 비교는 Firestore 보안 규칙이 서버에서 합니다.
+    const ADMIN_HASH_SALT = 'endofverdant-raid-admin:';
+    async function sha256Hex(text) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // 성공하면 true. 비밀번호가 틀리면 규칙이 쓰기를 거부하므로 false.
+    async function adminLogin(password) {
+        if (!userId || !password) return false;
+        try {
+            const passwordHash = await sha256Hex(ADMIN_HASH_SALT + password);
+            await setDoc(doc(db, 'siteAdmins', userId), { passwordHash, at: serverTimestamp() });
+            isAdmin = true;
+            return true;
+        } catch (e) {
+            if (e?.code !== 'permission-denied') console.error('관리자 인증 오류:', e);
+            return false;
+        }
+    }
+    // 이 브라우저의 관리자 권한을 서버에서도 해제합니다.
+    async function dropAdminSession() {
+        isAdmin = false;
+        stopCharSecretsListener();
+        if (userId) { try { await deleteDoc(doc(db, 'siteAdmins', userId)); } catch (e) { /* 없으면 무시 */ } }
+    }
+
+    // PC 비밀번호는 games/{gameId}/charSecrets/{charId} 에 저장되며 관리자만 읽을 수 있습니다.
+    let charSecrets = {};
+    let unsubscribeCharSecrets = null;
+    function startCharSecretsListener() {
+        stopCharSecretsListener();
+        if (!gameId || !isAdmin) return;
+        unsubscribeCharSecrets = onSnapshot(collection(db, 'games', gameId, 'charSecrets'), (snap) => {
+            charSecrets = {};
+            snap.docs.forEach(d => { charSecrets[d.id] = d.data().password ?? ''; });
+        }, (err) => console.warn('charSecrets 구독 실패:', err?.code));
+    }
+    function stopCharSecretsListener() {
+        if (unsubscribeCharSecrets) unsubscribeCharSecrets();
+        unsubscribeCharSecrets = null;
+        charSecrets = {};
+    }
+    // 캐릭터 생성은 모두 여기로: password 필드는 공개 문서에서 빼고 비공개 문서로 저장합니다.
+    function setCharacterInBatch(batch, charRef, charData) {
+        const { password, id, ...publicData } = charData;
+        batch.set(charRef, publicData);
+        if (publicData.type === 'PC') {
+            batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), {
+                password: (password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD
+            });
+        }
+    }
+    async function addCharacter(charData) {
+        const batch = writeBatch(db);
+        const charRef = doc(collection(db, 'games', gameId, 'characters'));
+        setCharacterInBatch(batch, charRef, charData);
+        await batch.commit();
+        return charRef;
+    }
+    // 예전 방식으로 공개 문서에 남아 있는 비밀번호를 비공개 위치로 옮깁니다 (관리자 로그인 시 자동 실행).
+    async function migrateLegacySecrets(gameDocData) {
+        if (!gameId || !isAdmin) return;
+        try {
+            if (gameDocData && 'adminPassword' in gameDocData) {
+                await updateDoc(doc(db, 'games', gameId), { adminPassword: deleteField() });
+            }
+            const legacy = characters.filter(c => 'password' in c);
+            if (legacy.length === 0) return;
+            for (let i = 0; i < legacy.length; i += 200) {
+                const batch = writeBatch(db);
+                legacy.slice(i, i + 200).forEach(c => {
+                    if (c.type === 'PC') {
+                        batch.set(doc(db, 'games', gameId, 'charSecrets', c.id), { password: c.password || DEFAULT_PC_PASSWORD });
+                    }
+                    batch.update(doc(db, 'games', gameId, 'characters', c.id), { password: deleteField() });
+                });
+                await batch.commit();
+            }
+            console.log(`비밀번호 ${legacy.length}건을 비공개 저장소로 옮겼습니다.`);
+        } catch (e) { console.error('비밀번호 이전 실패:', e); }
+    }
 
     // --- Global Variables ---
     const BOARD_SIZE = 10;
@@ -1482,7 +1566,17 @@ const loginStatusModal = document.getElementById('login-status-modal');
         }
     }
 
-    async function createGame() { await joinGame(generateGameId(), true); }
+    let pendingCreateGame = false;
+    async function createGame() {
+        if (!isAdmin) {
+            // 새 게임은 관리자만 만들 수 있습니다. 인증 후 이어서 생성합니다.
+            pendingCreateGame = true;
+            adminPasswordModal.classList.remove('hidden');
+            document.getElementById('admin-password-input').focus();
+            return;
+        }
+        await joinGame(generateGameId(), true);
+    }
     async function joinGame(id, isNewGame = false) {
     if (!id || id.trim().length === 0) { showCustomModal("오류", "유효한 게임 코드를 입력해주세요.", [{ text: "확인", class: "bg-red-600" }]); return; }
     gameId = id.trim().toUpperCase();
@@ -1514,6 +1608,8 @@ const loginStatusModal = document.getElementById('login-status-modal');
     onAuthStateChanged(auth, (user) => {
         if (user) {
             userId = user.uid;
+            // 새로고침하면 관리자 권한도 서버에서 해제 (공용 PC에 권한이 남지 않도록)
+            deleteDoc(doc(db, 'siteAdmins', userId)).catch(() => {});
             const savedGameId = localStorage.getItem('currentGameId');
             if (savedGameId) { joinGame(savedGameId); } 
             else { lobbyModal.classList.remove('hidden'); }
@@ -1527,7 +1623,6 @@ const loginStatusModal = document.getElementById('login-status-modal');
             currentTurnCharId: null,
             turnQueue: [],
             activeExtraUsed: false,
-            adminPassword: window.ADMIN_PASSWORD || "0613",
             gameState: 'PREPARATION', 
             round: 1, 
             maxRounds: 0, 
@@ -1827,7 +1922,7 @@ function listenForCombatTextEvents(gameId) {
                         op: fragmentTemplate.op, defPct: fragmentTemplate.defPct ?? 0, hitPct: fragmentTemplate.hitPct ?? 100,
                         speed: fragmentTemplate.speed, moveRange: fragmentTemplate.moveRange,
                         size: 1, skills: fragmentTemplate.skills || [],
-                        x: spawnX, y: spawnY, password: '',
+                        x: spawnX, y: spawnY,
                         isLoggedIn: false, hasActedThisRound: false,
                         statusEffects: [], isLastFallen: false, totalDamage: 0,
                         turnOrder: characters.length + 1 + i
@@ -3282,9 +3377,19 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
 
     errorP.textContent = '';
 
-    if (targetChar && targetChar.password === password) {
+    let pcLoginOk = false;
+    if (targetChar && password) {
+        try {
+            // 비밀번호 비교는 보안 규칙이 서버에서 합니다. 틀리면 쓰기가 거부됩니다.
+            await setDoc(doc(db, 'games', gameId, 'pcLogins', userId), { charId, password, at: serverTimestamp() });
+            pcLoginOk = true;
+        } catch (e) {
+            if (e?.code !== 'permission-denied') console.error('PC 로그인 오류:', e);
+        }
+    }
+    if (pcLoginOk) {
         loggedInCharId = charId;
-        isAdmin = false;
+        if (isAdmin) await dropAdminSession();
 
         await updateDoc(doc(db, 'games', gameId, 'characters', charId), { isLoggedIn: true });
         
@@ -3302,7 +3407,7 @@ async function handleLogout() {
     }
 
     loggedInCharId = null;
-    isAdmin = false;
+    if (isAdmin) await dropAdminSession();
     isMapEditMode = false;
     updateAuthStatus();
     closeModal('user-info-modal');
@@ -3753,6 +3858,7 @@ function renderSkillButtons(selectedChar) {
     async function deleteCharacter(charId, charName) {
         if (gameId) {
             await deleteDoc(doc(db, 'games', gameId, 'characters', charId));
+    try { await deleteDoc(doc(db, 'games', gameId, 'charSecrets', charId)); } catch (e) { /* 없으면 무시 */ }
             await logAction(`🔥 관리자가 **${charName}** 캐릭터를 삭제했습니다.`, "admin");
             // Reset selected character if it was the one deleted
             if (selectedCharacterId === charId) selectedCharacterId = null;
@@ -3777,7 +3883,7 @@ function renderSkillButtons(selectedChar) {
     };
     
     try {
-        await addDoc(collection(db, "games", gameId, "characters"), newCharData);
+        await addCharacter({ ...newCharData, password: charSecrets[charToCopy.id] });
 
         await logAction(`✨ 관리자가 '${charToCopy.name}' 캐릭터를 복사했습니다.`, "admin");
         closeModal('profile-modal'); // 현재 프로필 창 닫기
@@ -3852,7 +3958,7 @@ function renderSkillButtons(selectedChar) {
                         statusEffects: [], isLastFallen: false, totalDamage: 0,
                         turnOrder: characters.length + 1
                     };
-                    await addDoc(collection(db, "games", gameId, "characters"), newChar);
+                    await addCharacter(newChar);
                     showCustomModal("소환 완료", `${p.name}이(가) 전장에 추가되었습니다!`, [{ text: "확인", class: "bg-green-600" }]);
                 };
             });
@@ -4136,7 +4242,7 @@ function renderLoginStatus() {
                     <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-4">
                         <div><label class="text-gray-400">이름</label><input id="edit-name" class="form-input mt-1" value="${character.name}"></div>
                         <div><label class="text-gray-400">이미지 URL</label><input id="edit-image-url" class="form-input mt-1" value="${character.imageUrl || ''}"></div>
-                        ${character.type === 'PC' ? `<div><label class="text-gray-400">PC 비밀번호</label><input id="edit-password" type="text" class="form-input mt-1" value="${character.password || DEFAULT_PC_PASSWORD}"></div>` : ''}
+                        ${character.type === 'PC' ? `<div><label class="text-gray-400">PC 비밀번호</label><input id="edit-password" type="text" class="form-input mt-1" value="${charSecrets[character.id] ?? DEFAULT_PC_PASSWORD}"></div>` : ''}
                         <div class="grid grid-cols-3 gap-4">
                             <div><label class="text-gray-400">신체 내구도</label><input id="edit-bodyHp" type="number" class="form-input mt-1" value="${character.bodyHp ?? character.hp ?? 100}"></div>
                             <div><label class="text-gray-400">최대 신체 내구도</label><input id="edit-maxBodyHp" type="number" class="form-input mt-1" value="${character.maxBodyHp ?? character.maxHp ?? 100}"></div>
@@ -4192,13 +4298,18 @@ function renderLoginStatus() {
                     position: document.getElementById('edit-position').value,
                     skills: [1,2,3,4,5,6].map(i => document.getElementById(`edit-skill-${i}`)?.value).filter(s => s && s !== 'none')
                 };
-                if (character.type === 'PC') updates.password = document.getElementById('edit-password').value;
+                const newPcPassword = character.type === 'PC' ? document.getElementById('edit-password').value : null;
                 if (character.skills.includes('move')) {
                     const newMoveRange = parseInt(document.getElementById('edit-move-range')?.value) || 3;
                     updates.moveRange = newMoveRange;
                 }
 
-                if (gameId) await updateDoc(doc(db, 'games', gameId, 'characters', character.id), updates);
+                if (gameId) {
+                    await updateDoc(doc(db, 'games', gameId, 'characters', character.id), updates);
+                    if (newPcPassword !== null) {
+                        await setDoc(doc(db, 'games', gameId, 'charSecrets', character.id), { password: newPcPassword || DEFAULT_PC_PASSWORD });
+                    }
+                }
                 openProfileModal({...character, ...updates}, false);
             };
             document.getElementById('edit-position').onchange = (e) => {
@@ -4657,12 +4768,12 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                     op: boss.op, defPct: boss.defPct, hitPct: boss.hitPct,
                     speed: boss.speed, moveRange: boss.moveRange,
                     size: 2, skills: boss.skills || [],
-                    x: null, y: null, password: '',
+                    x: null, y: null,
                     isLoggedIn: false, hasActedThisRound: false,
                     statusEffects: [], isLastFallen: false, totalDamage: 0,
                     turnOrder: characters.length + 1
                 };
-                await addDoc(collection(db, "games", gameId, "characters"), newChar);
+                await addCharacter(newChar);
                 showCustomModal("소환 완료", `${boss.name}이(가) 전장에 추가되었습니다!`, [{text: "확인", class: "bg-red-600"}]);
             };
         });
@@ -4682,12 +4793,12 @@ modalHtml += `<div class="mb-8 p-4 border border-gray-700 rounded-md">
                     op: sub.op, defPct: sub.defPct ?? 0, hitPct: sub.hitPct ?? 100,
                     speed: sub.speed, moveRange: sub.moveRange,
                     size: 1, skills: sub.skills || [],
-                    x: null, y: null, password: '',
+                    x: null, y: null,
                     isLoggedIn: false, hasActedThisRound: false,
                     statusEffects: defaultStatusEffects, isLastFallen: false, totalDamage: 0,
                     turnOrder: characters.length + 1
                 };
-                await addDoc(collection(db, "games", gameId, "characters"), newChar);
+                await addCharacter(newChar);
                 showCustomModal("소환 완료", `${sub.label}이(가) 전장에 추가되었습니다!`, [{text: "확인", class: "bg-orange-600"}]);
             };
         });
@@ -4917,7 +5028,7 @@ document.getElementById('force-end-round-btn').onclick = async () => {
                 turnOrder: characters.length + 1
             };
             if (gameId) {
-                await addDoc(collection(db, "games", gameId, "characters"), newChar);
+                await addCharacter(newChar);
                 showCustomModal("성공", `'${newChar.name}' 캐릭터가 추가되었습니다.`, [{text: "확인", class: "bg-green-600"}]);
             }
         };
@@ -5348,27 +5459,33 @@ createGameBtn.addEventListener('click', createGame);
     });
     document.getElementById('cancel-admin-login-btn').addEventListener('click', () => closeModal('admin-password-modal'));
     
+    document.getElementById('cancel-admin-login-btn').addEventListener('click', () => { pendingCreateGame = false; });
     document.getElementById('submit-admin-login-btn').addEventListener('click', async () => {
         const input = document.getElementById('admin-password-input');
         const errorP = document.getElementById('admin-password-error');
+        errorP.textContent = '';
+        const ok = await adminLogin(input.value);
+        input.value = '';
+        if (!ok) { errorP.textContent = '비밀번호가 올바르지 않습니다.'; return; }
+
+        closeModal('admin-password-modal');
+        loggedInCharId = null;
+        if (pendingCreateGame) {
+            pendingCreateGame = false;
+            await joinGame(generateGameId(), true);
+            startCharSecretsListener();
+            updateAuthStatus();
+            render();
+            return;
+        }
         if (gameId) {
+            startCharSecretsListener();
             const gameDoc = await getDoc(doc(db, 'games', gameId));
-//여기를 수정해주세요 관리자 비밀번호
-            const correctPassword = gameDoc.data().adminPassword || "0000";
-            if (input.value === correctPassword) {
-                closeModal('admin-password-modal');
-                isAdmin = true;
-                loggedInCharId = null;
-                openAdminModal();
-                input.value = '';
-                errorP.textContent = '';
-                updateAuthStatus();
-                    render();
-                await logAction("👑 관리자가 로그인했습니다.", "system");
-            } else {
-                errorP.textContent = '비밀번호가 올바르지 않습니다.';
-                input.value = '';
-            }
+            await migrateLegacySecrets(gameDoc.data());
+            openAdminModal();
+            updateAuthStatus();
+            render();
+            await logAction("👑 관리자가 로그인했습니다.", "system");
         }
     });
 
@@ -5425,7 +5542,7 @@ gameBoard.addEventListener('drop', async e => {
                 isAdminMoveAllowed: isAdminMoveAllowed
             },
             boardTiles: boardTiles,
-            characters: characters.map(({ id, ...char }) => char) // id는 Firestore에서 자동 생성되므로 제외
+            characters: characters.map(({ id, ...char }) => (char.type === 'PC' ? { ...char, password: charSecrets[id] ?? DEFAULT_PC_PASSWORD } : char)) // id는 Firestore에서 자동 생성되므로 제외
         };
 
         // 2. 객체를 JSON 문자열로 변환합니다.
@@ -5467,20 +5584,24 @@ gameBoard.addEventListener('drop', async e => {
                         const charCollectionRef = collection(db, "games", gameId, "characters");
                         const snapshot = await getDocs(charCollectionRef);
                         const deleteBatch = writeBatch(db);
-                        snapshot.docs.forEach(doc => deleteBatch.delete(doc.ref));
+                        snapshot.docs.forEach(d => {
+                            deleteBatch.delete(d.ref);
+                            deleteBatch.delete(doc(db, "games", gameId, "charSecrets", d.id));
+                        });
                         await deleteBatch.commit();
 
                         // 2. 파일에서 읽어온 새 캐릭터 데이터를 추가합니다.
                         const addBatch = writeBatch(db);
                         settings.characters.forEach(charData => {
                             const newCharRef = doc(collection(db, "games", gameId, "characters"));
-                            addBatch.set(newCharRef, charData);
+                            setCharacterInBatch(addBatch, newCharRef, charData);
                         });
                         await addBatch.commit();
 
                         // 3. 나머지 게임 설정을 업데이트합니다.
                         const gameDocRef = doc(db, 'games', gameId);
-                        await updateDoc(gameDocRef, settings.gameSettings);
+                        const { adminPassword: _ignored, ...safeGameSettings } = settings.gameSettings;
+                        await updateDoc(gameDocRef, safeGameSettings);
 
                         // 4. 맵 타일 정보를 업데이트합니다.
                         const boardDocRef = doc(db, 'games', gameId, 'board', 'tiles');

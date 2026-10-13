@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// 녹채반역 레이드 Firestore 보안 규칙
+// - 관리자 비밀번호: siteSecrets/admin.passwordHash (아무도 읽거나 쓸 수 없음, 콘솔에서만 설정)
+// - 관리자 인증: siteAdmins/{uid} 문서를 올바른 해시로 쓸 수 있어야만 관리자로 인정
+// - PC 비밀번호: games/{gameId}/charSecrets/{charId} (관리자만 읽기/쓰기)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function siteAdminHash() {
+      return get(/databases/$(database)/documents/siteSecrets/admin).data.passwordHash;
+    }
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/siteAdmins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/siteAdmins/$(request.auth.uid)).data.passwordHash == siteAdminHash();
+    }
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // 관리자 비밀번호 해시. 클라이언트에서는 절대 접근 불가.
+    match /siteSecrets/{docId} {
+      allow read, write: if false;
+    }
+
+    // 관리자 세션. 비밀번호 해시가 맞을 때만 생성 가능, 본인 것만 조회/삭제.
+    // 비밀번호를 바꾸면 기존 세션은 모두 자동으로 무효가 됩니다.
+    match /siteAdmins/{uid} {
+      allow get, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['passwordHash', 'at'])
+        && request.resource.data.passwordHash == siteAdminHash();
+    }
+
+    // 전역 캐릭터 프리셋: 관리자 전용
+    match /characterPresets/{presetId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /games/{gameId} {
+      // 게임 코드를 아는 사람만 열람 가능 (목록 조회로 코드를 훔쳐볼 수 없음)
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isAdmin() && !('adminPassword' in request.resource.data);
+      // 플레이어는 턴 진행 등 전투 상태만 바꿀 수 있고, 게임 상태는 '종료'로만 바꿀 수 있습니다.
+      allow update: if (signedIn()
+          && !changedKeys().hasAny(['skills', 'maxRounds', 'isAdminMoveAllowed',
+                                    'boardBackgroundImage', 'pageBackgroundImage', 'adminPassword'])
+          && (!changedKeys().hasAny(['gameState']) || request.resource.data.gameState == 'ENDED'))
+        || (isAdmin() && (!('adminPassword' in request.resource.data) || !changedKeys().hasAny(['adminPassword'])));
+      allow delete: if isAdmin();
+
+      match /characters/{charId} {
+        allow read: if signedIn();
+        // 플레이어 쪽 게임 진행 중 적 소환(세피로트 파편)만 허용
+        allow create: if isAdmin()
+          || (signedIn() && request.resource.data.type == 'ENEMY' && !('password' in request.resource.data));
+        // 플레이어는 전투 수치만 변경 가능. 이름/스탯/스킬/비밀번호 등 프로필은 관리자만.
+        allow update: if (signedIn()
+            && !changedKeys().hasAny(['name', 'type', 'imageUrl', 'position', 'skills', 'size',
+                                      'maxBodyHp', 'maxMentalHp', 'maxHp', 'maxMp',
+                                      'defPct', 'hitPct', 'speed', 'moveRange', 'turnOrder',
+                                      'isBoss', 'stunImmune', 'stunImmuneAfterOne', 'password']))
+          || (isAdmin() && (!('password' in request.resource.data) || !changedKeys().hasAny(['password'])));
+        allow delete: if isAdmin();
+      }
+
+      // PC 비밀번호 (관리자 전용)
+      match /charSecrets/{charId} {
+        allow read, write: if isAdmin();
+      }
+
+      // PC 로그인 증명. 비밀번호가 맞을 때만 쓸 수 있고 본인 것만 볼 수 있습니다.
+      match /pcLogins/{uid} {
+        allow get, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['charId', 'password', 'at'])
+          && request.resource.data.charId is string
+          && exists(/databases/$(database)/documents/games/$(gameId)/charSecrets/$(request.resource.data.charId))
+          && request.resource.data.password
+             == get(/databases/$(database)/documents/games/$(gameId)/charSecrets/$(request.resource.data.charId)).data.password;
+      }
+
+      match /board/{docId} {
+        allow read: if signedIn();
+        allow write: if isAdmin();
+      }
+
+      match /logs/{logId} {
+        allow read, create: if signedIn();
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+
+      // 화면 연출용 일회성 이벤트
+      match /combatEvents/{eventId} {
+        allow read, create, delete: if signedIn();
+        allow update: if false;
+      }
+    }
+  }
+}
