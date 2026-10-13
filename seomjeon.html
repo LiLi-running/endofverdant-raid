@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오늘의 섬전 · 녹채반역</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="site.css">
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  .who { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .who select { flex: 1; }
+  .balance { text-align: center; padding: 18px 10px 14px; border-radius: 14px; background: radial-gradient(ellipse at 50% 0%, rgba(250,204,21,.10), transparent 70%), var(--panel-2); }
+  .balance .label { font-size: 13px; color: var(--text-3); }
+  .balance .amount { font-size: 44px; font-family: 'Black Han Sans', 'Pretendard', sans-serif; color: var(--gold); letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .daily { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .daily > div { background: var(--panel-2); border-radius: 10px; padding: 10px; text-align: center; }
+  .daily .k { font-size: 12px; color: var(--text-3); }
+  .daily .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .buttons-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .bet { margin-top: 18px; }
+  .bet-input { display: flex; gap: 8px; }
+  .bet-input input { font-size: 20px; font-weight: 700; text-align: center; }
+  .quick { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .quick button { flex: 1; padding: 7px 4px; font-size: 13px; }
+  .spin-btn { width: 100%; margin-top: 12px; padding: 16px; font-size: 24px; font-family: 'Black Han Sans', 'Pretendard', sans-serif; letter-spacing: .06em;
+    background: linear-gradient(135deg, #d9b43a, #4f9a5b); color: #fff; border: 0; border-radius: 14px; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .spin-btn:hover:not(:disabled) { background: linear-gradient(135deg, #d9b43a, #4f9a5b); filter: brightness(1.08); }
+  .spin-btn:disabled { background: var(--panel-2); color: var(--text-3); }
+  .result { margin-top: 16px; min-height: 108px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 14px; background: var(--panel-2); border: 1px solid transparent; }
+  .result .big { font-size: 32px; font-family: 'Black Han Sans', 'Pretendard', sans-serif; }
+  .result .sub { color: var(--text-2); margin-top: 4px; font-size: 14px; }
+  .result.flash { animation: flash .18s linear infinite; }
+  @keyframes flash { 0%, 100% { background: var(--panel-2); } 50% { background: rgba(233, 200, 75, .18); } }
+  .o-jackpot { color: var(--gold); } .o-success { color: var(--accent); } .o-even { color: var(--text-2); } .o-fail { color: #fb923c; } .o-disaster { color: var(--danger); }
+  .result.r-jackpot { border-color: var(--gold); box-shadow: 0 0 24px rgba(250,204,21,.25); }
+  .result.r-disaster { border-color: var(--danger); }
+  .odds { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  .odds td { padding: 6px 4px; border-top: 1px solid var(--line-soft); color: var(--text-2); }
+  .odds td:last-child, .odds td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; }
+  .history { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+  .history div { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 10px; border-radius: 6px; background: var(--panel-2); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .tabs button { background: none; border: 0; border-radius: 0; color: var(--text-2); padding: 8px 12px; border-bottom: 2px solid transparent; }
+  .tabs button:hover:not(:disabled) { background: none; color: var(--text); }
+  .tabs button.on { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+  .rank { display: grid; grid-template-columns: 30px 36px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; }
+  .rank:nth-child(odd) { background: var(--panel-2); }
+  .rank.me { outline: 1px solid var(--accent); }
+  .rank .no { font-weight: 900; text-align: center; color: var(--text-3); }
+  .rank .no.top { color: var(--gold); }
+  .rank .avatar { width: 36px; height: 36px; font-size: 14px; }
+  .rank .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .rank .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .empty-state { text-align: center; padding: 24px 8px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="index.html">END OF VERDANT</a>
+  <h1>오늘의 섬전</h1>
+  <nav><a href="characters.html">캐릭터</a><a href="duel.html">1:1 전투</a><a href="index.html">시작 페이지</a><button type="button" data-theme-toggle></button></nav>
+</header>
+
+<main class="layout">
+  <section class="card">
+    <div id="no-char" class="empty-state hidden">
+      <p>이 기기에 등록된 캐릭터가 없습니다.</p>
+      <a class="btn-primary" href="characters.html#new">캐릭터 만들기 (+$10)</a>
+      <p class="muted" style="margin-top:12px">이미 만든 캐릭터가 있다면 <a href="characters.html" style="color:var(--accent)">캐릭터 페이지</a>에서 불러오세요.</p>
+    </div>
+    <div id="play" class="hidden">
+      <div class="who"><span id="who-avatar"></span><select id="char-select" aria-label="캐릭터 선택"></select></div>
+      <div class="balance"><div class="label">보유 달러</div><div class="amount" id="balance">$0</div></div>
+      <div class="daily">
+        <div><div class="k">남은 섬전</div><div class="v" id="spins-left">-</div></div>
+        <div><div class="k">오늘 점수</div><div class="v" id="day-score">0</div></div>
+        <div><div class="k">누적 점수</div><div class="v" id="total-score">0</div></div>
+      </div>
+      <div class="buttons-row">
+        <button id="attend-btn" class="btn-info">출석 체크 +$10</button>
+        <button id="buy-btn">기회 추가 −$50</button>
+      </div>
+      <div class="bet">
+        <label for="bet">걸 금액</label>
+        <div class="bet-input"><input id="bet" type="number" min="1" step="1" inputmode="numeric" value="1"></div>
+        <div class="quick"><button data-q="1">1</button><button data-q="10">10</button><button data-q="half">절반</button><button data-q="all">전부</button></div>
+        <button id="spin-btn" class="spin-btn">섬전!</button>
+      </div>
+      <div id="result" class="result"><div class="sub">금액을 걸고 섬전!을 누르세요.</div></div>
+      <div id="history" class="history"></div>
+      <table class="odds" aria-label="확률표">
+        <tbody id="odds"></tbody>
+      </table>
+      <p class="muted" style="margin:10px 0 0">매일 기본 5번, 한국 시간 자정에 출석과 횟수가 갱신됩니다. 결과는 서버가 기록한 시각으로 정해지며 되돌릴 수 없습니다.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>순위</h2>
+    <div class="tabs" role="tablist">
+      <button class="on" data-rank="balance">잔여 달러</button>
+      <button data-rank="total">누적 점수</button>
+      <button data-rank="today">오늘 점수</button>
+    </div>
+    <div id="ranking"><p class="muted">불러오는 중...</p></div>
+    <p class="muted" style="margin-top:12px">점수: 대성공 +2 · 성공 +1 · 변동없음 0 · 실패 −1 · 대실패 −2</p>
+  </section>
+</main>
+
+<script src="firebase-config.js"></script>
+<script type="module">
+import { doc, getDoc, updateDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { db, onReady, $, esc, money, toast, avatarHtml, errMsg, watchCharacters, watchMyCharIds, watchWallets, ensureWallets } from "./common.js";
+import { OUTCOMES, DAILY_SPINS, EXTRA_SPIN_COST, ATTEND_REWARD, kstDayKey, effectiveDaily, spinsLeft,
+         attendUpdate, buyUpdate, spinUpdate, settleUpdate } from "./seomjeon-rules.js";
+
+let uid = null, allChars = {}, myIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
+let selected = new URLSearchParams(location.search).get('char') || localStorage.getItem('seomjeon.char') || null;
+let busy = false, rankMode = 'balance';
+
+$('odds').innerHTML = OUTCOMES.map(o => `<tr><td class="o-${o.key}"><b>${o.label}</b></td><td>${o.to - o.from}%</td><td>${o.net}</td></tr>`).join('');
+
+onReady((u) => {
+  uid = u;
+  watchCharacters(c => { allChars = c; charsLoaded = true; render(); });
+  watchMyCharIds(uid, s => { myIds = s; render(); });
+  watchWallets(w => { wallets = w; walletsLoaded = true; render(); settleStale(); });
+});
+setInterval(() => { renderPlay(); settleStale(); }, 30000); // 자정 갱신·방치된 정산 반영
+
+const myChars = () => [...myIds].map(id => allChars[id]).filter(Boolean);
+
+function render() {
+  if (!charsLoaded) return;
+  if (walletsLoaded) ensureWallets(myIds, allChars, wallets);
+  const mine = myChars();
+  $('no-char').classList.toggle('hidden', mine.length > 0);
+  $('play').classList.toggle('hidden', mine.length === 0);
+  if (mine.length) {
+    if (!selected || !mine.some(c => c.id === selected)) selected = mine[0].id;
+    const sel = $('char-select');
+    const opts = mine.map(c => `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    if (sel.innerHTML !== opts) sel.innerHTML = opts;
+    renderPlay();
+  }
+  renderRanking();
+}
+$('char-select').onchange = (e) => {
+  selected = e.target.value; localStorage.setItem('seomjeon.char', selected);
+  $('history').innerHTML = ''; $('result').className = 'result'; $('result').innerHTML = '<div class="sub">금액을 걸고 섬전!을 누르세요.</div>';
+  renderPlay(); renderRanking();
+};
+
+function renderPlay() {
+  const c = allChars[selected], w = wallets[selected];
+  if (!c) return;
+  $('who-avatar').innerHTML = avatarHtml(c);
+  if (!w) { $('balance').textContent = '…'; ['attend-btn', 'buy-btn', 'spin-btn'].forEach(id => $(id).disabled = true); return; }
+  const e = effectiveDaily(w), left = spinsLeft(w);
+  $('balance').textContent = money(w.balance);
+  $('spins-left').textContent = `${Math.max(0, left)} / ${DAILY_SPINS + e.extraSpins}`;
+  $('day-score').textContent = e.dayScore > 0 ? `+${e.dayScore}` : e.dayScore;
+  $('total-score').textContent = w.totalScore > 0 ? `+${w.totalScore}` : w.totalScore;
+  $('attend-btn').disabled = busy || e.attended || !!w.pending;
+  $('attend-btn').textContent = e.attended ? '오늘 출석 완료' : `출석 체크 +$${ATTEND_REWARD}`;
+  $('buy-btn').disabled = busy || w.balance < EXTRA_SPIN_COST || !!w.pending;
+  const bet = parseInt($('bet').value, 10);
+  $('spin-btn').disabled = busy || left <= 0 || w.balance < 1 || !!w.pending;
+  $('spin-btn').textContent = left <= 0 ? '오늘 기회 소진' : w.balance < 1 ? '달러 부족' : '섬전!';
+  if (bet > w.balance) $('bet').value = Math.max(1, w.balance);
+}
+
+document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
+  const w = wallets[selected]; if (!w) return;
+  const q = b.dataset.q;
+  $('bet').value = q === 'all' ? w.balance : q === 'half' ? Math.max(1, Math.floor(w.balance / 2)) : Math.min(Number(q), Math.max(1, w.balance));
+});
+
+async function withBusy(fn) {
+  if (busy) return; busy = true; renderPlay();
+  try { await fn(); } finally { busy = false; renderPlay(); }
+}
+function opError(e) {
+  const m = { attended: '오늘은 이미 출석했습니다.', balance: '달러가 부족합니다.', spins: '오늘 섬전 기회를 모두 썼습니다.', bet: '걸 금액을 확인하세요.', pending: '이전 섬전을 정산하는 중입니다.' }[e.message];
+  toast(m || (e?.code === 'permission-denied' ? '처리할 수 없습니다. 기기 시계가 맞는지, 캐릭터 비밀번호가 바뀌지 않았는지 확인하세요.' : errMsg(e)));
+  if (!m) console.error(e);
+}
+
+$('attend-btn').onclick = () => withBusy(async () => {
+  try { await updateDoc(doc(db, 'wallets', selected), attendUpdate(wallets[selected], serverTimestamp())); toast(`출석 완료! +$${ATTEND_REWARD}`); }
+  catch (e) { opError(e); }
+});
+$('buy-btn').onclick = () => withBusy(async () => {
+  try { await updateDoc(doc(db, 'wallets', selected), buyUpdate(wallets[selected], serverTimestamp())); toast('섬전 기회를 1회 추가했습니다.'); }
+  catch (e) { opError(e); }
+});
+
+// 정산: 결과는 이미 서버 시각으로 정해져 있으므로 트랜잭션으로 한 번만 반영합니다.
+async function settle(charId) {
+  return runTransaction(db, async tx => {
+    const ref = doc(db, 'wallets', charId);
+    const snap = await tx.get(ref);
+    const w = snap.data();
+    if (!w?.pending?.at) return null;
+    const r = settleUpdate(w, serverTimestamp());
+    tx.update(ref, r.update);
+    return r;
+  });
+}
+const settling = new Set();
+async function settleStale() {
+  for (const [id, w] of Object.entries(wallets)) {
+    if (!w.pending?.at || settling.has(id) || (busy && id === selected)) continue;
+    const mine = myIds.has(id);
+    const age = Date.now() - (w.pending.at.toMillis?.() ?? Date.now());
+    if (!mine && age < 15000) continue; // 남의 섬전은 주인 화면이 먼저 정산하도록 잠시 대기
+    settling.add(id);
+    try { const r = await settle(id); if (r && id === selected) showResult(r); }
+    catch (e) { console.warn('정산 실패', id, e?.code); }
+    finally { settling.delete(id); }
+  }
+}
+
+$('spin-btn').onclick = () => withBusy(async () => {
+  const w = wallets[selected];
+  const bet = parseInt($('bet').value, 10);
+  const box = $('result');
+  try {
+    const upd = spinUpdate(w, bet, serverTimestamp());
+    box.className = 'result flash'; box.innerHTML = '<div class="big">⚡</div><div class="sub">섬전!</div>';
+    await updateDoc(doc(db, 'wallets', selected), upd);
+    await new Promise(r => setTimeout(r, 700));
+    settling.add(selected);
+    let r;
+    try { r = await settle(selected); } finally { settling.delete(selected); }
+    if (r) showResult(r); else box.className = 'result';
+  } catch (e) {
+    box.className = 'result'; box.innerHTML = '<div class="sub">금액을 걸고 섬전!을 누르세요.</div>';
+    opError(e);
+  }
+});
+
+function showResult(r) {
+  const o = r.outcome, box = $('result');
+  const d = r.delta;
+  box.className = `result r-${o.key}`;
+  box.innerHTML = `<div class="big o-${o.key}">${o.label}!</div>
+    <div class="sub">$${r.bet}을 걸어 <b class="o-${o.key}">${d > 0 ? '+' : d < 0 ? '−' : '±'}${money(Math.abs(d))}</b> · 점수 ${o.score > 0 ? '+' : ''}${o.score}</div>`;
+  const row = document.createElement('div');
+  row.innerHTML = `<span class="o-${o.key}"><b>${o.label}</b> <span class="muted">$${r.bet}</span></span><span>${d > 0 ? '+' : d < 0 ? '−' : '±'}${money(Math.abs(d))}</span>`;
+  $('history').prepend(row);
+}
+
+// ---------- 순위 ----------
+document.querySelectorAll('[data-rank]').forEach(b => b.onclick = () => {
+  rankMode = b.dataset.rank;
+  document.querySelectorAll('[data-rank]').forEach(x => x.classList.toggle('on', x === b));
+  renderRanking();
+});
+function renderRanking() {
+  const el = $('ranking');
+  if (!walletsLoaded || !charsLoaded) return;
+  const today = kstDayKey();
+  const val = (w) => rankMode === 'balance' ? w.balance : rankMode === 'total' ? w.totalScore : effectiveDaily(w, today).dayScore;
+  let rows = Object.values(wallets).filter(w => allChars[w.id]);
+  if (rankMode === 'today') rows = rows.filter(w => w.dayKey === today && (w.spinsUsed || 0) > 0);
+  rows.sort((a, b) => val(b) - val(a) || a.id.localeCompare(b.id));
+  if (!rows.length) { el.innerHTML = `<p class="muted">${rankMode === 'today' ? '오늘 섬전한 캐릭터가 아직 없습니다.' : '아직 기록이 없습니다.'}</p>`; return; }
+  let rank = 0, prev = null;
+  el.innerHTML = rows.slice(0, 50).map((w, i) => {
+    const v = val(w); if (v !== prev) { rank = i + 1; prev = v; }
+    const c = allChars[w.id];
+    const shown = rankMode === 'balance' ? money(v) : (v > 0 ? `+${v}` : `${v}`);
+    return `<div class="rank ${myIds.has(w.id) ? 'me' : ''}"><span class="no ${rank <= 3 ? 'top' : ''}">${rank}</span>${avatarHtml(c)}<span class="nm">${esc(c.name)}</span><span class="val">${shown}</span></div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>

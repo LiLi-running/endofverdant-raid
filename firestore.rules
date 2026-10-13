@@ -1,50 +1,57 @@
 rules_version = '2';
 
-// 녹채반역 레이드 Firestore 보안 규칙
+// 녹채반역 Firestore 보안 규칙 (마스레이드 · 1:1 전투 · 관리자 설정)
 // - 관리자 비밀번호: siteSecrets/admin.passwordHash (아무도 읽거나 쓸 수 없음, 콘솔에서만 설정)
-// - 관리자 인증: siteAdmins/{uid} 문서를 올바른 해시로 쓸 수 있어야만 관리자로 인정
-// - PC 비밀번호: games/{gameId}/charSecrets/{charId} (관리자만 읽기/쓰기)
+// - 관리자 인증: siteAdmins/{uid} 문서를 올바른 해시로 쓸 수 있어야만 관리자로 인정 (12시간 유지)
+// - 레이드 PC 비밀번호: games/{gameId}/charSecrets/{charId} (관리자만)
+// - 1:1 캐릭터 비밀번호: duelCharSecrets/{charId} (관리자만 읽기), 본인 확인은 duelClaims 로 증명
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---------- 공통 ----------
     function signedIn() {
       return request.auth != null;
+    }
+    // 'collection/doc/...' 문자열로 문서 경로를 만듭니다.
+    function docPath(p) {
+      return path('/databases/' + database + '/documents/' + p);
     }
     function siteAdminHash() {
       return get(/databases/$(database)/documents/siteSecrets/admin).data.passwordHash;
     }
     function isAdmin() {
+      let sessionPath = /databases/$(database)/documents/siteAdmins/$(request.auth.uid);
       return signedIn()
-        && exists(/databases/$(database)/documents/siteAdmins/$(request.auth.uid))
-        && get(/databases/$(database)/documents/siteAdmins/$(request.auth.uid)).data.passwordHash == siteAdminHash();
+        && exists(sessionPath)
+        && get(sessionPath).data.passwordHash == siteAdminHash()
+        && get(sessionPath).data.at + duration.value(12, 'h') > request.time;
     }
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    // 관리자 비밀번호 해시. 클라이언트에서는 절대 접근 불가.
+    // ---------- 관리자 ----------
     match /siteSecrets/{docId} {
       allow read, write: if false;
     }
 
-    // 관리자 세션. 비밀번호 해시가 맞을 때만 생성 가능, 본인 것만 조회/삭제.
     // 비밀번호를 바꾸면 기존 세션은 모두 자동으로 무효가 됩니다.
     match /siteAdmins/{uid} {
       allow get, delete: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['passwordHash', 'at'])
+        && request.resource.data.at == request.time
         && request.resource.data.passwordHash == siteAdminHash();
     }
 
-    // 전역 캐릭터 프리셋: 관리자 전용
+    // ---------- 마스레이드 ----------
     match /characterPresets/{presetId} {
       allow read, write: if isAdmin();
     }
 
     match /games/{gameId} {
-      // 게임 코드를 아는 사람만 열람 가능 (목록 조회로 코드를 훔쳐볼 수 없음)
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if isAdmin();
       allow create: if isAdmin() && !('adminPassword' in request.resource.data);
       // 플레이어는 턴 진행 등 전투 상태만 바꿀 수 있고, 게임 상태는 '종료'로만 바꿀 수 있습니다.
       allow update: if (signedIn()
@@ -54,35 +61,68 @@ service cloud.firestore {
         || (isAdmin() && (!('adminPassword' in request.resource.data) || !changedKeys().hasAny(['adminPassword'])));
       allow delete: if isAdmin();
 
+      // 플레이어가 자기 공유 캐릭터로 직접 참가 (준비 단계에서만, 문서 ID = 공유 캐릭터 ID, 스탯은 성장 규칙대로)
+      function playerJoinOk(charId) {
+        let d = request.resource.data;
+        let sc = get(docPath('duelCharacters/' + charId)).data;
+        let cfg = raidBuildCfg();
+        let pos = sc.raid.position;
+        let p = sc.raid.points;
+        return get(docPath('games/' + gameId)).data.gameState == 'PREPARATION'
+          && isDuelOwner(charId)
+          && d.keys().hasOnly(['name', 'type', 'imageUrl', 'position', 'sharedCharId',
+                               'bodyHp', 'maxBodyHp', 'hp', 'maxHp', 'mentalHp', 'maxMentalHp', 'mp', 'maxMp',
+                               'speed', 'moveRange', 'op', 'defPct', 'hitPct', 'size', 'skills',
+                               'x', 'y', 'isLoggedIn', 'hasActedThisRound', 'statusEffects', 'isLastFallen', 'totalDamage', 'turnOrder'])
+          && d.type == 'PC' && d.sharedCharId == charId
+          && d.name == sc.name && d.imageUrl == sc.imageUrl && d.position == pos
+          && d.skills == cfg.skills[pos]
+          && d.maxBodyHp == buildFinal(cfg, pos, p, 'body') && d.bodyHp == d.maxBodyHp && d.hp == d.maxBodyHp && d.maxHp == d.maxBodyHp
+          && d.maxMentalHp == cfg.positions[pos].mental && d.mentalHp == d.maxMentalHp && d.mp == d.maxMentalHp && d.maxMp == d.maxMentalHp
+          && d.speed == buildFinal(cfg, pos, p, 'speed') && d.moveRange == buildFinal(cfg, pos, p, 'move')
+          && d.op == buildFinal(cfg, pos, p, 'op') && d.defPct == buildFinal(cfg, pos, p, 'def') && d.hitPct == buildFinal(cfg, pos, p, 'hit')
+          && d.size == 1 && d.x == null && d.y == null && d.statusEffects == [] && d.isLoggedIn == false
+          && d.hasActedThisRound == false && d.isLastFallen == false && d.totalDamage == 0 && d.turnOrder is int;
+      }
       match /characters/{charId} {
         allow read: if signedIn();
-        // 플레이어 쪽 게임 진행 중 적 소환(세피로트 파편)만 허용
         allow create: if isAdmin()
-          || (signedIn() && request.resource.data.type == 'ENEMY' && !('password' in request.resource.data));
-        // 플레이어는 전투 수치만 변경 가능. 이름/스탯/스킬/비밀번호 등 프로필은 관리자만.
+          || (signedIn() && request.resource.data.type == 'ENEMY' && !('password' in request.resource.data))
+          || (signedIn() && playerJoinOk(charId));
         allow update: if (signedIn()
             && !changedKeys().hasAny(['name', 'type', 'imageUrl', 'position', 'skills', 'size',
                                       'maxBodyHp', 'maxMentalHp', 'maxHp', 'maxMp',
                                       'defPct', 'hitPct', 'speed', 'moveRange', 'turnOrder',
-                                      'isBoss', 'stunImmune', 'stunImmuneAfterOne', 'password']))
+                                      'isBoss', 'stunImmune', 'stunImmuneAfterOne', 'password', 'sharedCharId']))
           || (isAdmin() && (!('password' in request.resource.data) || !changedKeys().hasAny(['password'])));
-        allow delete: if isAdmin();
+        // 관리자, 또는 준비 단계에서 자기 공유 캐릭터의 참가 취소
+        allow delete: if isAdmin()
+          || (signedIn() && resource.data.sharedCharId == charId && isDuelOwner(charId)
+              && get(docPath('games/' + gameId)).data.gameState == 'PREPARATION');
       }
 
-      // PC 비밀번호 (관리자 전용)
       match /charSecrets/{charId} {
         allow read, write: if isAdmin();
       }
 
-      // PC 로그인 증명. 비밀번호가 맞을 때만 쓸 수 있고 본인 것만 볼 수 있습니다.
+      // PC 로그인 증명. 공유 캐릭터(sharedCharId)면 그 캐릭터 비밀번호, 아니면 게임별 PC 비밀번호와 비교합니다.
+      function pcPasswordOk(charId, password) {
+        let raidChar = get(docPath('games/' + gameId + '/characters/' + charId)).data;
+        return ('sharedCharId' in raidChar && raidChar.sharedCharId is string)
+          ? (isDuelOwner(raidChar.sharedCharId)
+             || (exists(secretPath(raidChar.sharedCharId)) && password == get(secretPath(raidChar.sharedCharId)).data.password))
+          : (exists(docPath('games/' + gameId + '/charSecrets/' + charId))
+             && password == get(docPath('games/' + gameId + '/charSecrets/' + charId)).data.password);
+      }
       match /pcLogins/{uid} {
-        allow get, delete: if signedIn() && request.auth.uid == uid;
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow list: if isAdmin();
+        allow delete: if (signedIn() && request.auth.uid == uid) || isAdmin();
         allow create, update: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['charId', 'password', 'at'])
           && request.resource.data.charId is string
-          && exists(/databases/$(database)/documents/games/$(gameId)/charSecrets/$(request.resource.data.charId))
-          && request.resource.data.password
-             == get(/databases/$(database)/documents/games/$(gameId)/charSecrets/$(request.resource.data.charId)).data.password;
+          && exists(docPath('games/' + gameId + '/characters/' + request.resource.data.charId))
+          && pcPasswordOk(request.resource.data.charId, request.resource.data.password);
       }
 
       match /board/{docId} {
@@ -96,10 +136,306 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
-      // 화면 연출용 일회성 이벤트
       match /combatEvents/{eventId} {
         allow read, create, delete: if signedIn();
         allow update: if false;
+      }
+    }
+
+    // ---------- 레이드 성장 규칙 (raid-build.js 와 같은 계산) ----------
+    match /siteConfig/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    function raidBuildCfg() {
+      return get(docPath('siteConfig/raidBuild')).data;
+    }
+    function buildFinal(cfg, pos, p, k) {
+      return cfg.positions[pos][k] + cfg.per[k] * p[k];
+    }
+    // 캐릭터에 저장하는 레이드 설정: 포지션 + 정수 분배(합계·항목별 상한)
+    function validRaidBuild(r) {
+      let cfg = raidBuildCfg();
+      let p = r.points;
+      return r.keys().hasOnly(['position', 'points'])
+        && r.position is string && r.position in cfg.positions
+        && p.keys().hasOnly(['body', 'speed', 'move', 'op', 'def', 'hit'])
+        && p.keys().hasAll(['body', 'speed', 'move', 'op', 'def', 'hit'])
+        && p.body is int && p.speed is int && p.move is int && p.op is int && p.def is int && p.hit is int
+        && p.body >= 0 && p.speed >= 0 && p.move >= 0 && p.op >= 0 && p.def >= 0 && p.hit >= 0
+        && p.body + p.speed + p.move + p.op + p.def + p.hit <= cfg.points
+        && buildFinal(cfg, r.position, p, 'body') <= cfg.max.body
+        && buildFinal(cfg, r.position, p, 'speed') <= cfg.max.speed
+        && buildFinal(cfg, r.position, p, 'move') <= cfg.max.move
+        && buildFinal(cfg, r.position, p, 'op') <= cfg.max.op
+        && buildFinal(cfg, r.position, p, 'def') <= cfg.max.def
+        && buildFinal(cfg, r.position, p, 'hit') <= cfg.max.hit;
+    }
+
+    // ---------- 공유 캐릭터 (1:1 전투 · 레이드 · 섬전) ----------
+    // 컬렉션 이름은 처음 1:1 전투용으로 만든 그대로(duelCharacters)를 씁니다.
+    // 체력 = 5 + hpInvest(0~5), 투력 power(1~5), 저력 guard(1~5), 투자 합계 9~12
+    function validDuelChar(d) {
+      return d.keys().hasOnly(['name', 'imageUrl', 'hpInvest', 'power', 'guard', 'createdAt', 'updatedAt', 'raid'])
+        && (!('raid' in d) || validRaidBuild(d.raid))
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 30
+        && d.imageUrl is string && d.imageUrl.size() <= 2000
+        && d.hpInvest is int && d.hpInvest >= 0 && d.hpInvest <= 5
+        && d.power is int && d.power >= 1 && d.power <= 5
+        && d.guard is int && d.guard >= 1 && d.guard <= 5
+        && d.hpInvest + d.power + d.guard >= 9
+        && d.hpInvest + d.power + d.guard <= 12;
+    }
+    function validDuelSecret(d) {
+      return d.keys().hasOnly(['password'])
+        && d.password is string && d.password.size() >= 1 && d.password.size() <= 100;
+    }
+    function claimPath(charId) {
+      return docPath('duelClaims/' + request.auth.uid + '_' + charId);
+    }
+    function secretPath(charId) {
+      return docPath('duelCharSecrets/' + charId);
+    }
+    // 이 브라우저가 해당 캐릭터의 현재 비밀번호를 알고 있음을 증명했는지
+    function isDuelOwner(charId) {
+      return signedIn()
+        && exists(claimPath(charId))
+        && exists(secretPath(charId))
+        && get(claimPath(charId)).data.password == get(secretPath(charId)).data.password;
+    }
+
+    match /duelCharacters/{charId} {
+      allow read: if signedIn();
+      // 캐릭터와 비밀번호 문서를 한 번에 함께 만들어야 합니다.
+      allow create: if signedIn() && validDuelChar(request.resource.data)
+        && !exists(secretPath(charId))
+        && existsAfter(secretPath(charId));
+      allow update: if (isAdmin() || isDuelOwner(charId)) && validDuelChar(request.resource.data);
+      allow delete: if isAdmin() || isDuelOwner(charId);
+    }
+
+    match /duelCharSecrets/{charId} {
+      allow read: if isAdmin();
+      allow create: if signedIn() && validDuelSecret(request.resource.data)
+        && !exists(docPath('duelCharacters/' + charId))
+        && existsAfter(docPath('duelCharacters/' + charId));
+      allow update: if (isAdmin() || isDuelOwner(charId)) && validDuelSecret(request.resource.data);
+      allow delete: if isAdmin() || isDuelOwner(charId);
+    }
+
+    // 문서 ID = {uid}_{charId}. 비밀번호가 맞을 때만 쓸 수 있고, 본인 것만 볼 수 있습니다.
+    match /duelClaims/{claimId} {
+      allow get, delete: if signedIn() && claimId.matches(request.auth.uid + '_.+');
+      allow list: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'charId', 'password', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.charId is string
+        && claimId == request.auth.uid + '_' + request.resource.data.charId
+        && existsAfter(secretPath(request.resource.data.charId))
+        && request.resource.data.password == getAfter(secretPath(request.resource.data.charId)).data.password;
+    }
+
+    // ---------- 오늘의 섬전: 캐릭터 지갑 ----------
+    // seomjeon-rules.js 와 같은 계산을 합니다. 한쪽을 바꾸면 다른 쪽도 바꾸세요.
+    function charDocPath(charId) {
+      return docPath('duelCharacters/' + charId);
+    }
+    function todayKey() {
+      let k = request.time + duration.value(9, 'h');
+      return k.year() * 10000 + k.month() * 100 + k.day();
+    }
+    function isTodayW(w) { return w.dayKey == todayKey(); }
+    function effAttended(w) { return isTodayW(w) ? w.attended : false; }
+    function effSpins(w) { return isTodayW(w) ? w.spinsUsed : 0; }
+    function effExtra(w) { return isTodayW(w) ? w.extraSpins : 0; }
+    function effDayScore(w) { return isTodayW(w) ? w.dayScore : 0; }
+    function walletKeys() {
+      return ['balance', 'totalScore', 'dayKey', 'attended', 'spinsUsed', 'extraSpins', 'dayScore',
+              'pending', 'counts', 'lastOp', 'lastOpAt', 'createdAt'];
+    }
+    function walletShapeOk(w) {
+      return w.keys().hasOnly(walletKeys()) && w.keys().hasAll(walletKeys())
+        && w.balance is int && w.balance >= 0;
+    }
+    function newWalletOk(w) {
+      return walletShapeOk(w)
+        && w.balance == 10 && w.totalScore == 0 && w.dayKey == todayKey()
+        && w.attended == false && w.spinsUsed == 0 && w.extraSpins == 0 && w.dayScore == 0
+        && w.pending == null
+        && w.counts == {'jackpot': 0, 'success': 0, 'even': 0, 'fail': 0, 'disaster': 0}
+        && w.lastOp == 'create' && w.lastOpAt == request.time && w.createdAt == request.time;
+    }
+    function totalsSame(b, a) {
+      return a.totalScore == b.totalScore && a.counts == b.counts && a.createdAt == b.createdAt;
+    }
+    // 출석: 하루 1번 +10
+    function attendOk(b, a) {
+      return b.pending == null && a.pending == null && effAttended(b) == false
+        && a.dayKey == todayKey() && a.attended == true
+        && a.spinsUsed == effSpins(b) && a.extraSpins == effExtra(b) && a.dayScore == effDayScore(b)
+        && a.balance == b.balance + 10 && totalsSame(b, a);
+    }
+    // 기회 추가: 50 소비, 오늘 기회 +1
+    function buyOk(b, a) {
+      return b.pending == null && a.pending == null && b.balance >= 50
+        && a.dayKey == todayKey() && a.attended == effAttended(b) && a.spinsUsed == effSpins(b)
+        && a.extraSpins == effExtra(b) + 1 && a.dayScore == effDayScore(b)
+        && a.balance == b.balance - 50 && totalsSame(b, a);
+    }
+    // 섬전: 건 금액을 빼고 서버 시각(at)을 찍어 둡니다. 결과는 이 시각으로 정해집니다.
+    function spinOk(b, a) {
+      let p = a.pending;
+      return b.pending == null && p != null
+        && p.keys().hasOnly(['bet', 'at', 'dayKey'])
+        && p.bet is int && p.bet >= 1 && p.bet <= b.balance
+        && p.at == request.time && p.dayKey == todayKey()
+        && effSpins(b) < 5 + effExtra(b)
+        && a.dayKey == todayKey() && a.attended == effAttended(b) && a.spinsUsed == effSpins(b) + 1
+        && a.extraSpins == effExtra(b) && a.dayScore == effDayScore(b)
+        && a.balance == b.balance - p.bet && totalsSame(b, a);
+    }
+    function rollOf(p) {
+      return math.floor(p.at.nanos() / 1000) % 100;
+    }
+    function outcomeKey(r) {
+      return r < 5 ? 'jackpot' : (r < 35 ? 'success' : (r < 75 ? 'even' : (r < 95 ? 'fail' : 'disaster')));
+    }
+    function outcomeScore(k) {
+      return k == 'jackpot' ? 2 : (k == 'success' ? 1 : (k == 'even' ? 0 : (k == 'fail' ? -1 : -2)));
+    }
+    function settledBalance(balance, bet, k) {
+      return k == 'jackpot' ? balance + bet * 11
+        : (k == 'success' ? balance + bet * 2
+        : (k == 'even' ? balance + bet
+        : (k == 'fail' ? balance
+        : (balance - bet * 2 < 0 ? 0 : balance - bet * 2))));
+    }
+    // 정산: 결과가 시각으로 정해져 있으므로 누구나 할 수 있지만, 계산이 정확해야만 통과합니다.
+    function settleOk(b, a) {
+      let p = b.pending;
+      let k = outcomeKey(rollOf(p));
+      return p != null && a.pending == null
+        && a.balance == settledBalance(b.balance, p.bet, k)
+        && a.totalScore == b.totalScore + outcomeScore(k)
+        && a.dayScore == b.dayScore + outcomeScore(k)
+        && a.counts[k] == b.counts[k] + 1
+        && a.counts.diff(b.counts).affectedKeys().hasOnly([k])
+        && a.dayKey == b.dayKey && a.attended == b.attended && a.spinsUsed == b.spinsUsed
+        && a.extraSpins == b.extraSpins && a.createdAt == b.createdAt;
+    }
+    function walletUpdateOk(charId) {
+      let b = resource.data;
+      let a = request.resource.data;
+      return walletShapeOk(a) && a.lastOpAt == request.time
+        && ((a.lastOp == 'settle' && settleOk(b, a))
+            || (isDuelOwner(charId)
+                && ((a.lastOp == 'attend' && attendOk(b, a))
+                    || (a.lastOp == 'buy' && buyOk(b, a))
+                    || (a.lastOp == 'spin' && spinOk(b, a)))));
+    }
+
+    match /wallets/{charId} {
+      allow read: if signedIn();
+      // 캐릭터를 만들 때 함께 생성하거나, 지갑이 없는 기존 캐릭터의 주인이 한 번 생성 (+10달러)
+      allow create: if signedIn() && newWalletOk(request.resource.data)
+        && ((!exists(charDocPath(charId)) && existsAfter(charDocPath(charId)))
+            || (exists(charDocPath(charId)) && isDuelOwner(charId)));
+      allow update: if (signedIn() && walletUpdateOk(charId)) || isAdmin();
+      // 캐릭터를 삭제할 때만 함께 삭제 가능
+      allow delete: if isAdmin() || (isDuelOwner(charId) && !existsAfter(charDocPath(charId)));
+    }
+
+    // ---------- 1:1 전투: 전투방 ----------
+    function otherSlot(k) {
+      return k == 'p1' ? 'p2' : 'p1';
+    }
+    function isInSlot(d, k) {
+      return d[k] != null && d[k].uid == request.auth.uid;
+    }
+    // 빈 자리에 참가: 본인 캐릭터(비밀번호 증명)이고, 스탯이 캐릭터 문서와 일치해야 합니다.
+    function joinOk(d, k) {
+      let s = d[k];
+      let c = get(docPath('duelCharacters/' + s.charId)).data;
+      return s.keys().hasOnly(['uid', 'charId', 'name', 'imageUrl', 'maxHp', 'hp', 'power', 'guard', 'ready', 'endRequest'])
+        && s.uid == request.auth.uid
+        && !isInSlot(d, otherSlot(k))
+        && isDuelOwner(s.charId)
+        && s.name == c.name && s.imageUrl == c.imageUrl
+        && s.maxHp == 5 + c.hpInvest && s.hp == s.maxHp
+        && s.power == c.power && s.guard == c.guard
+        && s.ready == false && s.endRequest == false;
+    }
+    // 이미 앉아 있는 자리의 변경: 체력/준비/종료요청만, 준비·종료요청은 본인만, 체력은 규칙 범위 안에서만
+    function seatedChangeOk(b, a, k) {
+      let opp = b[otherSlot(k)];
+      return a[k].diff(b[k]).affectedKeys().hasOnly(['hp', 'ready', 'endRequest'])
+        && (a[k].ready == b[k].ready || b[k].uid == request.auth.uid)
+        && (a[k].endRequest == b[k].endRequest || b[k].uid == request.auth.uid)
+        && a[k].hp is int && a[k].hp >= 0 && a[k].hp <= a[k].maxHp
+        && (
+          // 전투 시작 시 최대 체력으로
+          (b.status == 'WAITING' && a.status == 'ACTIVE' && a[k].hp == a[k].maxHp)
+          // 그 외에는 줄어들기만 하고, 한 라운드에 상대 투력 이상은 줄지 않으며, 라운드가 넘어갈 때만
+          || a[k].hp == b[k].hp
+          || (opp != null && a[k].hp < b[k].hp && a[k].hp >= b[k].hp - opp.power && a.round == b.round + 1)
+        );
+    }
+    function slotOk(b, a, k) {
+      return b[k] == a[k]
+        || (b[k] == null && a[k] != null && b.status == 'WAITING' && joinOk(a, k))
+        || (b[k] != null && a[k] == null && b.status == 'WAITING' && b[k].uid == request.auth.uid)
+        || (b[k] != null && a[k] != null && seatedChangeOk(b, a, k));
+    }
+    // 차례 진행(선택, 라운드, 선공)은 현재 차례인 사람만
+    function turnWriterOk(b, a) {
+      let turnKeys = ['phase', 'firstAction', 'round', 'first'];
+      return !a.diff(b).affectedKeys().hasAny(turnKeys)
+        || (b.status == 'WAITING' && a.status == 'ACTIVE')
+        || (b.status == 'ACTIVE' && b.phase == 'FIRST' && isInSlot(b, b.first))
+        || (b.status == 'ACTIVE' && b.phase == 'SECOND' && isInSlot(b, otherSlot(b.first)));
+    }
+    function statusOk(b, a) {
+      return (a.status == b.status && b.status != 'ENDED')
+        || (b.status == 'WAITING' && a.status == 'ACTIVE'
+            && b.p1 != null && b.p2 != null && b.p1.ready == true && b.p2.ready == true
+            && a.round == 1 && a.phase == 'FIRST')
+        // 종료는 양측 종료 요청(무승부) 또는 판정으로 체력이 0이 된 경우에만
+        || (b.status == 'ACTIVE' && a.status == 'ENDED'
+            && ((b.p1.endRequest == true && b.p2.endRequest == true && a.winner == 'draw')
+                || (a.round == b.round + 1 && (a.p1.hp == 0 || a.p2.hp == 0))));
+    }
+    function duelUpdateOk() {
+      let b = resource.data;
+      let a = request.resource.data;
+      return a.createdBy == b.createdBy
+        && (isInSlot(b, 'p1') || isInSlot(b, 'p2') || isInSlot(a, 'p1') || isInSlot(a, 'p2'))
+        && statusOk(b, a)
+        && slotOk(b, a, 'p1')
+        && slotOk(b, a, 'p2')
+        && turnWriterOk(b, a);
+    }
+
+    match /duels/{duelId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'WAITING'
+        && request.resource.data.p1 == null
+        && request.resource.data.p2 == null;
+      allow update: if (signedIn() && duelUpdateOk()) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /logs/{logId} {
+        allow read: if signedIn();
+        // 참가자만 기록 가능 (참가·퇴장과 같은 트랜잭션에서도 쓸 수 있도록 전후 상태를 모두 확인)
+        allow create: if isAdmin()
+          || (signedIn() && (isInSlot(get(docPath('duels/' + duelId)).data, 'p1')
+                            || isInSlot(get(docPath('duels/' + duelId)).data, 'p2')
+                            || isInSlot(getAfter(docPath('duels/' + duelId)).data, 'p1')
+                            || isInSlot(getAfter(docPath('duels/' + duelId)).data, 'p2')));
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
   }

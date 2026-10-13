@@ -1,0 +1,91 @@
+/* 녹채반역 공용 테마: 어두운 테마(아카이브풍 칠판 질감) / 밝은 테마
+   html.light 클래스가 있으면 밝은 테마입니다. theme.js 가 저장된 선택(없으면 기기 설정)을 적용합니다. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap');
+
+:root {
+  color-scheme: dark;
+  --bg: #1b1d1c;
+  --bg-side: #151615;
+  --panel: rgba(40, 42, 41, 0.78);
+  --panel-solid: #262827;
+  --panel-2: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.10);
+  --line-soft: rgba(255, 255, 255, 0.06);
+  --text: #f1f1ef;
+  --text-2: #c5c7c4;
+  --text-3: #8b8e8a;
+  --accent: #6dbb79;
+  --accent-2: #3f8a4c;
+  --accent-ink: #ffffff;
+  --accent-soft: #3d7a47;
+  --danger: #ea7070;
+  --warn: #e3b546;
+  --info: #6797dc;
+  --gold: #e9c84b;
+  --input-bg: rgba(0, 0, 0, 0.35);
+  --nav-btn: #242524;
+  --nav-btn-hover: #2d2f2e;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --radius: 20px;
+  /* 칠판 질감: 고운 입자 + 큰 얼룩 + 아래쪽 녹색 기운 */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .075 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --smudge: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='900'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.006' numOctaves='4' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .65 0 0 0 0 .55 0 0 0 .16 -.02'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E");
+  --glow: radial-gradient(ellipse 70% 45% at 65% 85%, rgba(46, 92, 52, 0.30), transparent 70%),
+          radial-gradient(ellipse 50% 40% at 15% 10%, rgba(255, 255, 255, 0.035), transparent 70%);
+}
+
+html.light {
+  color-scheme: light;
+  --bg: #ebe9e2;
+  --bg-side: #f5f3ee;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-solid: #ffffff;
+  --panel-2: rgba(0, 0, 0, 0.04);
+  --line: rgba(0, 0, 0, 0.12);
+  --line-soft: rgba(0, 0, 0, 0.07);
+  --text: #1c1e1c;
+  --text-2: #4a4e4a;
+  --text-3: #7a7e79;
+  --accent: #2f7d3d;
+  --accent-2: #2f7d3d;
+  --accent-ink: #ffffff;
+  --accent-soft: #4f8f5a;
+  --danger: #c43c3c;
+  --warn: #9a6f05;
+  --info: #2f63b0;
+  --gold: #9c7400;
+  --input-bg: #ffffff;
+  --nav-btn: #ffffff;
+  --nav-btn-hover: #f0efe9;
+  --shadow: 0 10px 30px rgba(60, 50, 30, 0.10);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .2 0 0 0 0 .18 0 0 0 0 .12 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --smudge: none;
+  --glow: radial-gradient(ellipse 70% 45% at 65% 90%, rgba(80, 140, 85, 0.12), transparent 70%),
+          radial-gradient(ellipse 50% 40% at 10% 0%, rgba(255, 255, 255, 0.7), transparent 70%);
+}
+
+html, body { background-color: var(--bg); color: var(--text); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  background-image: var(--grain), var(--smudge), var(--glow);
+  /* 레이어: 입자, 얼룩, 빛 2개 (--glow 는 그라디언트 2개) */
+  background-size: 220px 220px, 2000px 2000px, cover, cover;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
+  background-attachment: fixed;
+  transition: background-color .25s, color .25s;
+}
+.display { font-family: 'Black Han Sans', 'Pretendard', sans-serif; font-weight: 400; letter-spacing: .01em; }
+
+/* 테마 전환 버튼 */
+.theme-btn {
+  display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 10px;
+  background: var(--nav-btn); border: 1px solid var(--line); color: var(--text-2); cursor: pointer;
+}
+.theme-btn:hover { color: var(--accent); }
+.theme-btn svg { width: 18px; height: 18px; }
+.theme-btn .i-sun { display: none; }
+html.light .theme-btn .i-sun { display: block; }
+html.light .theme-btn .i-moon { display: none; }

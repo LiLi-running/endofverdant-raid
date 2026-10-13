@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1:1 전투 · 녹채반역</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="site.css">
+<style>
+  /* room */
+  .room-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+  .room-head .code { font-family: ui-monospace, monospace; font-size: 15px; color: var(--text-2); }
+  .arena { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+  .vs { align-self: center; font-family: 'Black Han Sans', sans-serif; font-size: 28px; color: var(--text-3); }
+  @media (max-width: 760px) { .arena { grid-template-columns: 1fr; } .vs { justify-self: center; } }
+  .fighter { background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 230px; }
+  .fighter.turn { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .fighter.me .who::after { content: ' · 나'; color: var(--accent); font-weight: 400; font-size: 13px; }
+  .fighter .top { display: flex; gap: 12px; align-items: center; }
+  .fighter .portrait { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; background: var(--panel-2); flex-shrink: 0; display: grid; place-items: center; font-size: 30px; color: var(--text-3); }
+  .fighter .who { font-size: 18px; font-weight: 700; }
+  .hpbar { height: 12px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+  .hpbar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .4s; }
+  .hpbar.low > div { background: linear-gradient(90deg, #dc2626, var(--danger)); }
+  .hptext { font-size: 13px; color: var(--text-2); display: flex; justify-content: space-between; }
+  .empty-seat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-3); text-align: center; }
+  .seat-state { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 14px; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); display: inline-block; }
+  .dot.on { background: var(--accent); }
+
+  .control { margin-top: 16px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; text-align: center; }
+  .control .msg { margin-bottom: 12px; color: var(--text-2); }
+  .control .msg b { color: var(--text); }
+  .control .btns { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  .control .btns button { min-width: 110px; padding: 11px 16px; font-weight: 700; }
+  .result-banner { font-family: 'Black Han Sans', 'Pretendard', sans-serif; font-size: 26px; color: var(--accent); margin-bottom: 8px; }
+
+  .log { margin-top: 16px; }
+  .log-entry { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; white-space: pre-wrap; line-height: 1.6; font-size: 14px; position: relative; }
+  .log-entry.system { background: transparent; border-style: dashed; border-color: var(--line); color: var(--text-2); font-size: 13px; }
+  .log-entry .copy { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 3px 8px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="index.html">END OF VERDANT</a>
+  <h1>1:1 전투</h1>
+  <nav><a href="#" id="nav-lobby">전투 목록</a><a href="characters.html">캐릭터</a><a href="seomjeon.html">오늘의 섬전</a><a href="index.html">시작 페이지</a><button type="button" data-theme-toggle></button></nav>
+</header>
+
+<main>
+  <!-- 로비 -->
+  <section id="view-lobby" class="grid-2">
+    <div class="card">
+      <h2>전투방 <button id="create-duel-btn" class="btn-primary">새 전투방 만들기</button></h2>
+      <div id="duel-list" class="list"><p class="muted">불러오는 중...</p></div>
+    </div>
+    <div class="card">
+      <h2>내 캐릭터 <a href="characters.html#new" class="btn-primary" style="text-decoration:none;padding:9px 14px;border-radius:6px">캐릭터 만들기</a></h2>
+      <div id="my-char-list" class="list"><p class="muted">불러오는 중...</p></div>
+      <p class="muted" style="margin-top:14px">캐릭터 수정·불러오기는 <a href="characters.html" style="color:var(--accent)">캐릭터 페이지</a>에서 합니다.</p>
+    </div>
+  </section>
+
+  <!-- 전투방 -->
+  <section id="view-room" class="hidden">
+    <div class="room-head">
+      <div>
+        <span id="room-status" class="badge"></span>
+        <span class="code">방 코드 <b id="room-code"></b></span>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="copy-link-btn" class="btn-ghost">관전 링크 복사</button>
+        <button id="copy-log-btn" class="btn-ghost">전체 기록 복사</button>
+      </div>
+    </div>
+    <div class="arena">
+      <div id="seat-p1" class="fighter"></div>
+      <div class="vs">VS</div>
+      <div id="seat-p2" class="fighter"></div>
+    </div>
+    <div id="control" class="control"></div>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<!-- 캐릭터 불러오기 / 비밀번호 확인 -->
+<div id="claim-modal" class="modal">
+  <div class="modal-box">
+    <h3 id="claim-title">캐릭터 불러오기</h3>
+    <div class="field" id="claim-select-field"><label for="claim-char">캐릭터</label><select id="claim-char"></select></div>
+    <div class="field"><label for="claim-password">비밀번호</label><input id="claim-password" type="password" autocomplete="current-password"></div>
+    <p class="error" id="claim-error"></p>
+    <div class="actions"><button id="claim-cancel" class="btn-ghost">취소</button><button id="claim-ok" class="btn-primary">확인</button></div>
+  </div>
+</div>
+
+<!-- 자리 참가 -->
+<div id="join-modal" class="modal">
+  <div class="modal-box">
+    <h3>참가할 캐릭터 선택</h3>
+    <div class="field"><select id="join-char"></select></div>
+    <p class="muted" id="join-help"></p>
+    <p class="error" id="join-error"></p>
+    <div class="actions"><button id="join-cancel" class="btn-ghost">취소</button><button id="join-ok" class="btn-primary">참가</button></div>
+  </div>
+</div>
+
+<!-- 확인 -->
+<div id="confirm-modal" class="modal">
+  <div class="modal-box">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-msg" style="color:var(--text-2); white-space:pre-wrap"></p>
+    <div class="actions"><button id="confirm-no" class="btn-ghost">취소</button><button id="confirm-yes" class="btn-danger">확인</button></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, where, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
+         writeBatch, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, rollDie,
+         resolveRound, firstChoiceLog, startLog, otherSlot, tag } from "./duel-rules.js";
+
+const app = initializeApp(window.FIREBASE_CONFIG);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let uid = null;
+let allChars = {};          // charId -> data (전체 캐릭터)
+let myCharIds = new Set();  // 이 브라우저가 비밀번호를 증명한 캐릭터
+let currentDuelId = null, currentDuel = null, currentLogs = [];
+let unsubRoom = null, unsubLogs = null;
+
+// ---------- 공통 UI ----------
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u || '') ? u : '';
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 1800); }
+function openModal(id) { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
+function confirmBox(title, msg, yesText = '확인') {
+  return new Promise(res => {
+    $('confirm-title').textContent = title; $('confirm-msg').textContent = msg; $('confirm-yes').textContent = yesText;
+    openModal('confirm-modal');
+    $('confirm-yes').onclick = () => { closeModal('confirm-modal'); res(true); };
+    $('confirm-no').onclick = () => { closeModal('confirm-modal'); res(false); };
+  });
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('복사했습니다.'); }
+  catch { toast('복사하지 못했습니다.'); }
+}
+function avatarHtml(c, cls = 'avatar') {
+  const url = safeUrl(c?.imageUrl);
+  return url ? `<img class="${cls}" src="${esc(url)}" alt="" referrerpolicy="no-referrer">`
+             : `<div class="${cls}">${esc((c?.name || '?').slice(0, 1))}</div>`;
+}
+function statChips(c) {
+  const hp = c.maxHp ?? maxHpOf(c);
+  return `<div class="chips"><span class="chip">체력 ${hp}</span><span class="chip">투력 ${c.power}</span><span class="chip">저력 ${c.guard}</span></div>`;
+}
+function errMsg(e) {
+  if (e?.code === 'permission-denied') return '권한이 없거나 비밀번호가 맞지 않습니다.';
+  return '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+}
+
+// ---------- 라우팅 ----------
+function route() {
+  const m = location.hash.match(/^#room\/(.+)$/);
+  if (m) openRoom(decodeURIComponent(m[1])); else showLobby();
+}
+window.addEventListener('hashchange', route);
+$('nav-lobby').onclick = (e) => { e.preventDefault(); location.hash = ''; };
+
+function showLobby() {
+  leaveRoomListeners();
+  $('view-room').classList.add('hidden');
+  $('view-lobby').classList.remove('hidden');
+}
+
+// ---------- 인증 ----------
+onAuthStateChanged(auth, (user) => {
+  if (!user) { signInAnonymously(auth).catch(e => console.error('익명 로그인 실패', e)); return; }
+  uid = user.uid;
+  listenCharacters();
+  listenMyClaims();
+  listenDuelList();
+  route();
+});
+
+// ---------- 캐릭터 ----------
+function listenCharacters() {
+  onSnapshot(query(collection(db, 'duelCharacters'), orderBy('name')), snap => {
+    allChars = {};
+    snap.docs.forEach(d => { allChars[d.id] = { id: d.id, ...d.data() }; });
+    renderMyChars();
+    if (currentDuel) renderRoom();
+  }, e => console.error('캐릭터 목록 오류', e));
+}
+function listenMyClaims() {
+  onSnapshot(query(collection(db, 'duelClaims'), where('uid', '==', uid)), snap => {
+    myCharIds = new Set(snap.docs.map(d => d.data().charId));
+    renderMyChars();
+    if (currentDuel) renderRoom();
+  }, e => console.error('내 캐릭터 오류', e));
+}
+function myChars() { return [...myCharIds].map(id => allChars[id]).filter(Boolean); }
+
+function renderMyChars() {
+  const list = $('my-char-list');
+  const mine = myChars();
+  if (mine.length === 0) { list.innerHTML = `<p class="muted">아직 이 기기에 등록된 캐릭터가 없습니다.</p>`; return; }
+  list.innerHTML = mine.map(c => `
+    <div class="row">
+      ${avatarHtml(c)}
+      <div class="grow"><div class="title">${esc(c.name)}</div>${statChips(c)}</div>
+      <a class="btn-ghost" style="text-decoration:none;padding:9px 14px;border-radius:6px" href="characters.html">관리</a>
+    </div>`).join('');
+}
+
+// 비밀번호로 캐릭터 등록(불러오기)
+function openClaim(charId = null) {
+  const others = Object.values(allChars).filter(c => !myCharIds.has(c.id));
+  $('claim-title').textContent = charId ? `${tag(allChars[charId]?.name)} 비밀번호 확인` : '캐릭터 불러오기';
+  $('claim-select-field').classList.toggle('hidden', !!charId);
+  $('claim-char').innerHTML = others.length
+    ? others.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')
+    : `<option value="">불러올 캐릭터가 없습니다</option>`;
+  if (charId) $('claim-char').innerHTML = `<option value="${esc(charId)}"></option>`;
+  $('claim-password').value = ''; $('claim-error').textContent = '';
+  openModal('claim-modal');
+  return new Promise(res => {
+    $('claim-cancel').onclick = () => { closeModal('claim-modal'); res(false); };
+    $('claim-ok').onclick = async () => {
+      const id = $('claim-char').value, password = $('claim-password').value;
+      if (!id || !password) { $('claim-error').textContent = '캐릭터와 비밀번호를 입력하세요.'; return; }
+      try {
+        await setDoc(doc(db, 'duelClaims', `${uid}_${id}`), { uid, charId: id, password, at: serverTimestamp() });
+        myCharIds.add(id);
+        closeModal('claim-modal'); toast('불러왔습니다.'); res(true);
+      } catch (e) { $('claim-error').textContent = e?.code === 'permission-denied' ? '비밀번호가 맞지 않습니다.' : errMsg(e); }
+    };
+  });
+}
+
+// ---------- 전투방 목록 ----------
+const STATUS_LABEL = { WAITING: '대기 중', ACTIVE: '전투 중', ENDED: '종료' };
+function listenDuelList() {
+  onSnapshot(query(collection(db, 'duels'), orderBy('createdAt', 'desc'), limit(40)), snap => {
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.status !== 'ENDED').slice(0, 20);
+    const list = $('duel-list');
+    if (items.length === 0) { list.innerHTML = `<p class="muted">열려 있는 전투방이 없습니다.</p>`; return; }
+    list.innerHTML = items.map(d => {
+      const n1 = d.p1?.name ? esc(d.p1.name) : '빈 자리', n2 = d.p2?.name ? esc(d.p2.name) : '빈 자리';
+      const st = d.status.toLowerCase();
+      const label = d.status === 'ACTIVE' ? `${d.round}라운드` : STATUS_LABEL[d.status];
+      const canJoin = d.status === 'WAITING' && (!d.p1 || !d.p2);
+      return `<div class="row">
+        <div class="grow"><div class="title">${n1} <span class="muted">vs</span> ${n2}</div><div class="muted">방 코드 ${esc(d.id)}</div></div>
+        <span class="badge ${st}">${label}</span>
+        <button class="${canJoin ? 'btn-primary' : 'btn-ghost'}" data-room="${esc(d.id)}">${canJoin ? '입장' : '관전'}</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-room]').forEach(b => b.onclick = () => { location.hash = `#room/${encodeURIComponent(b.dataset.room)}`; });
+  }, e => { console.error(e); $('duel-list').innerHTML = `<p class="muted">목록을 불러오지 못했습니다.</p>`; });
+}
+
+$('create-duel-btn').onclick = async () => {
+  try {
+    const ref = doc(collection(db, 'duels'));
+    await setDoc(ref, {
+      status: 'WAITING', createdAt: serverTimestamp(), createdBy: uid, updatedAt: serverTimestamp(),
+      p1: null, p2: null, round: 0, first: null, phase: null, firstAction: null, winner: null, endReason: ''
+    });
+    location.hash = `#room/${ref.id}`;
+  } catch (e) { console.error(e); toast(errMsg(e)); }
+};
+
+// ---------- 전투방 ----------
+function leaveRoomListeners() {
+  if (unsubRoom) unsubRoom(); if (unsubLogs) unsubLogs();
+  unsubRoom = unsubLogs = null; currentDuelId = null; currentDuel = null; currentLogs = [];
+}
+function openRoom(id) {
+  if (currentDuelId === id) return;
+  leaveRoomListeners();
+  currentDuelId = id;
+  $('view-lobby').classList.add('hidden');
+  $('view-room').classList.remove('hidden');
+  $('room-code').textContent = id;
+  $('log').innerHTML = ''; $('control').innerHTML = '<p class="muted">불러오는 중...</p>';
+  unsubRoom = onSnapshot(doc(db, 'duels', id), snap => {
+    if (!snap.exists()) { $('control').innerHTML = `<p class="msg">존재하지 않거나 삭제된 전투방입니다.</p><button class="btn-ghost" onclick="location.hash=''">목록으로</button>`; $('seat-p1').innerHTML = $('seat-p2').innerHTML = ''; return; }
+    currentDuel = { id: snap.id, ...snap.data() };
+    renderRoom();
+    maybeAutoStart();
+    maybeAutoEnd();
+  }, e => { console.error(e); $('control').innerHTML = `<p class="msg">${errMsg(e)}</p>`; });
+  unsubLogs = onSnapshot(query(collection(db, 'duels', id, 'logs'), orderBy('seq')), snap => {
+    currentLogs = snap.docs.map(d => d.data());
+    renderLogs();
+  });
+}
+
+function mySlot(d = currentDuel) {
+  if (!d) return null;
+  if (d.p1?.uid === uid) return 'p1';
+  if (d.p2?.uid === uid) return 'p2';
+  return null;
+}
+
+function renderSeat(k) {
+  const d = currentDuel, s = d[k], el = $(`seat-${k}`);
+  const me = mySlot();
+  el.className = 'fighter' + (s && s.uid === uid ? ' me' : '')
+    + (d.status === 'ACTIVE' && s && ((d.phase === 'FIRST' && d.first === k) || (d.phase === 'SECOND' && d.first !== k)) ? ' turn' : '');
+  if (!s) {
+    const can = d.status === 'WAITING' && !me;
+    el.innerHTML = `<div class="empty-seat"><div style="font-size:15px">빈 자리</div>
+      ${can ? `<button class="btn-primary" data-join="${k}">이 자리에 참가</button>` : `<div class="muted">${d.status === 'WAITING' ? '상대를 기다리는 중' : ''}</div>`}</div>`;
+    const b = el.querySelector('[data-join]'); if (b) b.onclick = () => openJoin(k);
+    return;
+  }
+  const pct = Math.round((s.hp / s.maxHp) * 100);
+  let state = '';
+  if (d.status === 'WAITING') {
+    state = s.uid === uid
+      ? `<label class="toggle"><input type="checkbox" data-ready ${s.ready ? 'checked' : ''}> 전투 시작</label>
+         <button class="btn-ghost" data-leave style="padding:5px 10px;font-size:13px">자리 비우기</button>`
+      : `<span><span class="dot ${s.ready ? 'on' : ''}"></span> ${s.ready ? '전투 시작 체크함' : '준비 중'}</span>`;
+  } else if (d.status === 'ACTIVE') {
+    state = d.first === k ? `<span class="badge active">${d.round}라운드 선공</span>` : `<span class="badge">후공</span>`;
+    if (s.endRequest) state += ` <span class="badge waiting">종료 요청함</span>`;
+  } else if (d.status === 'ENDED') {
+    state = d.winner === k ? `<span class="badge active">승리</span>` : d.winner === 'draw' ? `<span class="badge">무승부</span>` : d.winner ? `<span class="badge ended">패배</span>` : '';
+  }
+  el.innerHTML = `<div class="top">${avatarHtml(s, 'portrait')}<div><div class="who">${esc(s.name)}</div>${statChips(s)}</div></div>
+    <div><div class="hpbar ${pct <= 30 ? 'low' : ''}"><div style="width:${pct}%"></div></div>
+    <div class="hptext"><span>체력</span><span><b>${s.hp}</b> / ${s.maxHp}</span></div></div>
+    <div class="seat-state">${state}</div>`;
+  const r = el.querySelector('[data-ready]'); if (r) r.onchange = () => setReady(k, r.checked);
+  const l = el.querySelector('[data-leave]'); if (l) l.onclick = () => leaveSeat(k);
+}
+
+function renderRoom() {
+  const d = currentDuel; if (!d) return;
+  const st = $('room-status');
+  st.className = 'badge ' + d.status.toLowerCase();
+  st.textContent = d.status === 'ACTIVE' ? `전투 중 · ${d.round}라운드` : STATUS_LABEL[d.status];
+  renderSeat('p1'); renderSeat('p2');
+  renderControl();
+}
+
+function renderControl() {
+  const d = currentDuel, me = mySlot(), c = $('control');
+  const nameOf = (k) => tag(d[k]?.name || '?');
+  let html = '';
+  if (d.status === 'WAITING') {
+    html = !d.p1 || !d.p2
+      ? `<p class="msg">참가자 2명이 모이면 각자 <b>전투 시작</b>에 체크하세요. 둘 다 체크하면 자동으로 시작합니다.</p>`
+      : `<p class="msg">두 참가자가 모두 <b>전투 시작</b>에 체크하면 자동으로 시작합니다.</p>`;
+    if (!me) html += `<p class="muted">빈 자리에서 참가하거나, 이 화면에서 관전할 수 있습니다.</p>`;
+  } else if (d.status === 'ACTIVE') {
+    const F = d.first, S = otherSlot(F);
+    if (d.phase === 'FIRST') {
+      html = `<p class="msg"><b>${d.round}라운드</b> · 선공 ${esc(nameOf(F))}의 선택을 기다립니다.</p>`;
+      if (me === F) html += `<div class="btns"><button class="btn-danger" data-act="attack">공격</button><button class="btn-ghost" data-act="none">행동 없음</button></div>`;
+    } else {
+      const chose = d.firstAction === 'attack' ? '공격' : '행동 없음';
+      html = `<p class="msg"><b>${d.round}라운드</b> · 선공 ${esc(nameOf(F))}: <b>${chose}</b> — 후공 ${esc(nameOf(S))}의 선택을 기다립니다.</p>`;
+      if (me === S) html += `<div class="btns"><button class="btn-danger" data-act="attack">공격</button><button class="btn-info" data-act="defend">방어</button><button class="btn-ghost" data-act="none">행동 없음</button></div>`;
+    }
+    if (me) {
+      const mine = d[me].endRequest, theirs = d[otherSlot(me)].endRequest;
+      html += `<div style="margin-top:14px"><label class="toggle" style="justify-content:center"><input type="checkbox" data-endreq ${mine ? 'checked' : ''}> 전투 종료 요청</label>
+        <p class="muted" style="margin:4px 0 0">${theirs ? '상대가 종료를 요청했습니다. 함께 체크하면 무승부로 끝납니다.' : '양측이 모두 체크하면 무승부로 종료합니다.'}</p></div>`;
+    }
+  } else {
+    const title = d.winner === 'draw' ? '무승부' : d.winner ? `${esc(nameOf(d.winner))} 승리` : '전투 종료';
+    html = `<div class="result-banner">${title}</div>${d.endReason ? `<p class="msg">${esc(d.endReason)}</p>` : ''}
+      <div class="btns"><button class="btn-primary" id="again-btn">새 전투방 만들기</button><button class="btn-ghost" onclick="location.hash=''">목록으로</button></div>`;
+  }
+  c.innerHTML = html;
+  c.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, b));
+  const er = c.querySelector('[data-endreq]'); if (er) er.onchange = () => setEndRequest(er.checked);
+  const again = $('again-btn'); if (again) again.onclick = () => $('create-duel-btn').click();
+}
+
+function renderLogs() {
+  const el = $('log');
+  el.innerHTML = currentLogs.slice().reverse().map((l, i) => `<div class="log-entry ${l.kind === 'result' ? '' : 'system'}">${l.kind === 'result' ? `<button class="copy" data-copy="${currentLogs.length - 1 - i}">복사</button>` : ''}${esc(l.text)}</div>`).join('');
+  el.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(currentLogs[Number(b.dataset.copy)].text));
+}
+$('copy-log-btn').onclick = () => copyText(currentLogs.map(l => l.text).join('\n\n'));
+$('copy-link-btn').onclick = () => copyText(`${location.origin}${location.pathname}#room/${currentDuelId}`);
+
+let logCounter = 0;
+function newLog(tx, text, kind = 'system') {
+  const ref = doc(collection(db, 'duels', currentDuelId, 'logs'));
+  tx.set(ref, { text, kind, at: serverTimestamp(), seq: Date.now() * 100 + (logCounter++ % 100) });
+}
+
+// ---------- 참가 / 준비 ----------
+function openJoin(k) {
+  const mine = myChars();
+  $('join-error').textContent = '';
+  $('join-char').innerHTML = mine.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (체력 ${maxHpOf(c)} · 투력 ${c.power} · 저력 ${c.guard})</option>`).join('');
+  $('join-help').innerHTML = mine.length ? '참가 시점의 스탯으로 전투합니다.' : '이 기기에 등록된 캐릭터가 없습니다. 로비에서 캐릭터를 만들거나 불러오세요.';
+  $('join-ok').disabled = mine.length === 0;
+  openModal('join-modal');
+  $('join-cancel').onclick = () => closeModal('join-modal');
+  $('join-ok').onclick = async () => {
+    const c = allChars[$('join-char').value]; if (!c) return;
+    try {
+      await runTransaction(db, async tx => {
+        const ref = doc(db, 'duels', currentDuelId);
+        const snap = await tx.get(ref); const d = snap.data();
+        if (d.status !== 'WAITING' || d[k]) throw new Error('taken');
+        if (mySlot(d)) throw new Error('already');
+        const hp = maxHpOf(c);
+        tx.update(ref, { [k]: { uid, charId: c.id, name: c.name, imageUrl: c.imageUrl || '', maxHp: hp, hp, power: c.power, guard: c.guard, ready: false, endRequest: false }, updatedAt: serverTimestamp() });
+        newLog(tx, `${tag(c.name)} 참가.`);
+      });
+      closeModal('join-modal');
+    } catch (e) {
+      console.error(e);
+      if (e.message === 'taken') $('join-error').textContent = '이미 다른 사람이 앉은 자리입니다.';
+      else if (e.message === 'already') $('join-error').textContent = '이미 이 전투에 참가하고 있습니다.';
+      else if (e?.code === 'permission-denied') {
+        // 다른 기기에서 비밀번호가 바뀐 경우: 다시 확인
+        closeModal('join-modal');
+        if (await openClaim(c.id)) openJoin(k);
+      } else $('join-error').textContent = errMsg(e);
+    }
+  };
+}
+
+async function leaveSeat(k) {
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'duels', currentDuelId);
+      const d = (await tx.get(ref)).data();
+      if (d.status !== 'WAITING' || d[k]?.uid !== uid) return;
+      tx.update(ref, { [k]: null, updatedAt: serverTimestamp() });
+      newLog(tx, `${tag(d[k].name)} 퇴장.`);
+    });
+  } catch (e) { console.error(e); toast(errMsg(e)); }
+}
+
+async function setReady(k, ready) {
+  try { await updateDoc(doc(db, 'duels', currentDuelId), { [`${k}.ready`]: ready, updatedAt: serverTimestamp() }); }
+  catch (e) { console.error(e); toast(errMsg(e)); }
+}
+
+// 양측이 모두 체크하면 참가자 브라우저가 시작 처리 (트랜잭션으로 한 번만)
+let starting = false;
+async function maybeAutoStart() {
+  const d = currentDuel;
+  if (starting || !d || d.status !== 'WAITING' || !d.p1 || !d.p2 || !d.p1.ready || !d.p2.ready || !mySlot()) return;
+  starting = true;
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'duels', currentDuelId);
+      const cur = (await tx.get(ref)).data();
+      if (cur.status !== 'WAITING' || !cur.p1?.ready || !cur.p2?.ready) return;
+      const first = rollDie(2) === 1 ? 'p1' : 'p2';
+      tx.update(ref, {
+        status: 'ACTIVE', round: 1, first, phase: 'FIRST', firstAction: null, winner: null,
+        p1: { ...cur.p1, hp: cur.p1.maxHp, endRequest: false },
+        p2: { ...cur.p2, hp: cur.p2.maxHp, endRequest: false },
+        updatedAt: serverTimestamp()
+      });
+      newLog(tx, startLog(cur[first].name), 'result');
+    });
+  } catch (e) { console.error('시작 실패', e); }
+  finally { starting = false; }
+}
+
+// ---------- 행동 ----------
+async function act(action, btn) {
+  const buttons = $('control').querySelectorAll('[data-act]');
+  buttons.forEach(b => b.disabled = true);
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'duels', currentDuelId);
+      const d = { id: currentDuelId, ...(await tx.get(ref)).data() };
+      if (d.status !== 'ACTIVE') throw new Error('stale');
+      const me = mySlot(d);
+      if (d.phase === 'FIRST') {
+        if (me !== d.first || !['attack', 'none'].includes(action)) throw new Error('stale');
+        tx.update(ref, { phase: 'SECOND', firstAction: action, updatedAt: serverTimestamp() });
+        newLog(tx, firstChoiceLog(d[me].name, action));
+      } else {
+        if (me !== otherSlot(d.first) || !['attack', 'defend', 'none'].includes(action)) throw new Error('stale');
+        const r = resolveRound(d, action);
+        const upd = {
+          [`${d.first}.hp`]: r.hp[d.first],
+          [`${otherSlot(d.first)}.hp`]: r.hp[otherSlot(d.first)],
+          round: r.nextRound, updatedAt: serverTimestamp()
+        };
+        if (r.ended) Object.assign(upd, { status: 'ENDED', winner: r.winner, phase: null, firstAction: null, endReason: '' });
+        else Object.assign(upd, { first: r.nextFirst, phase: 'FIRST', firstAction: null });
+        tx.update(ref, upd);
+        newLog(tx, r.text, 'result');
+      }
+    });
+  } catch (e) {
+    if (e.message !== 'stale') { console.error(e); toast(errMsg(e)); }
+    buttons.forEach(b => b.disabled = false);
+  }
+}
+
+async function setEndRequest(on) {
+  const me = mySlot(); if (!me) return;
+  try { await updateDoc(doc(db, 'duels', currentDuelId), { [`${me}.endRequest`]: on, updatedAt: serverTimestamp() }); }
+  catch (e) { console.error(e); toast(errMsg(e)); }
+}
+let ending = false;
+async function maybeAutoEnd() {
+  const d = currentDuel;
+  if (ending || !d || d.status !== 'ACTIVE' || !d.p1?.endRequest || !d.p2?.endRequest || !mySlot()) return;
+  ending = true;
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, 'duels', currentDuelId);
+      const cur = (await tx.get(ref)).data();
+      if (cur.status !== 'ACTIVE' || !cur.p1?.endRequest || !cur.p2?.endRequest) return;
+      tx.update(ref, { status: 'ENDED', winner: 'draw', endReason: '양측의 요청으로 전투를 종료했습니다.', updatedAt: serverTimestamp() });
+      newLog(tx, `양측의 요청으로 전투를 종료합니다.\n\n${tag(cur.p1.name)}의 현재 체력 ${cur.p1.hp}.\n${tag(cur.p2.name)}의 현재 체력 ${cur.p2.hp}.\n\n전투 종료. 무승부입니다.`, 'result');
+    });
+  } catch (e) { console.error('종료 실패', e); }
+  finally { ending = false; }
+}
+
+// 모달 바깥 클릭으로 닫기
+document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m && m.id !== 'claim-modal' && m.id !== 'confirm-modal') closeModal(m.id); }));
+</script>
+</body>
+</html>

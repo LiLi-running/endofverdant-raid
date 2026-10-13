@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>캐릭터 · 녹채반역</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="site.css">
+<style>
+  .char-card { display: grid; grid-template-columns: 72px 1fr auto; gap: 14px; align-items: center; padding: 14px; border-radius: 10px; background: var(--panel-2); }
+  .char-card .avatar { width: 72px; height: 72px; border-radius: 10px; font-size: 24px; }
+  .char-card .name { font-size: 17px; font-weight: 700; }
+  .char-card .acts { display: flex; flex-direction: column; gap: 6px; }
+  @media (max-width: 520px) { .char-card { grid-template-columns: 56px 1fr; } .char-card .avatar { width: 56px; height: 56px; } .char-card .acts { grid-column: 1 / -1; flex-direction: row; } .char-card .acts > * { flex: 1; } }
+  .intro { color: var(--text-2); font-size: 14px; line-height: 1.7; margin: 0 0 18px; }
+  .pos-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  @media (max-width: 480px) { .pos-grid { grid-template-columns: repeat(2, 1fr); } }
+  .pos-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 10px 6px; border-radius: 10px; font-weight: 700; }
+  .pos-btn.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; color: var(--accent); }
+  .build-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft, #2a2a2a); }
+  .build-row .final { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+  .build-row .final small { color: var(--text-3); font-weight: 400; }
+  .raid-summary { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+</style>
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="index.html">END OF VERDANT</a>
+  <h1>캐릭터</h1>
+  <nav><a href="duel.html">1:1 전투</a><a href="seomjeon.html">오늘의 섬전</a><a href="index.html">시작 페이지</a><button type="button" data-theme-toggle></button></nav>
+</header>
+
+<main>
+  <div class="card">
+    <h2>내 캐릭터 <button id="new-char-btn" class="btn-primary">캐릭터 만들기</button></h2>
+    <p class="intro">캐릭터는 1:1 전투, 마스레이드, 오늘의 섬전에서 함께 씁니다. 새로 만들면 <b style="color:var(--gold)">$10</b>을 받습니다.<br>
+      <b>레이드</b> 버튼에서 포지션과 정수 분배를 정해 두면, 레이드 게임이 준비 단계일 때 레이드 화면의 참가 버튼으로 직접 들어갈 수 있습니다.</p>
+    <div id="my-char-list" class="list"><p class="muted">불러오는 중...</p></div>
+    <p class="muted" style="margin-top:16px">다른 기기에서 만든 캐릭터는 비밀번호로 <a href="#" id="import-char-link" style="color:var(--accent)">불러올 수 있습니다</a>.</p>
+  </div>
+</main>
+
+<!-- 캐릭터 편집 -->
+<div id="char-modal" class="modal">
+  <div class="modal-box">
+    <h3 id="char-modal-title">캐릭터 만들기</h3>
+    <div class="field"><label for="c-name">이름</label><input id="c-name" maxlength="30" placeholder="예) 연우 강"></div>
+    <div class="field">
+      <label for="c-image">이미지 URL (선택)</label>
+      <div style="display:flex; gap:10px; align-items:center">
+        <input id="c-image" placeholder="https://...">
+        <img id="c-image-preview" class="avatar hidden" alt="">
+      </div>
+    </div>
+    <div class="muted" style="margin:6px 0 2px; font-weight:700; color:var(--text-2)">1:1 전투 스탯</div>
+    <div id="c-stats"></div>
+    <div id="c-total" class="total"></div>
+    <div class="field" style="margin-top:16px">
+      <label for="c-password" id="c-password-label">캐릭터 비밀번호</label>
+      <input id="c-password" type="password" autocomplete="new-password" maxlength="100">
+      <p class="muted" id="c-password-help" style="margin:6px 0 0"></p>
+    </div>
+    <p class="error" id="c-error"></p>
+    <div class="actions">
+      <button id="c-delete" class="btn-danger hidden" style="margin-right:auto">삭제</button>
+      <button id="c-cancel" class="btn-ghost">취소</button>
+      <button id="c-save" class="btn-primary">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 레이드 설정 -->
+<div id="raid-modal" class="modal">
+  <div class="modal-box" style="max-width:520px">
+    <h3 id="raid-modal-title">레이드 설정</h3>
+    <p class="muted" style="margin:-8px 0 14px">포지션을 고르고 정수를 나눠 주세요. 레이드 게임이 준비 단계일 때 이 설정으로 직접 참가할 수 있습니다.</p>
+    <div id="raid-positions" class="pos-grid"></div>
+    <div id="raid-body"></div>
+    <p class="error" id="raid-error"></p>
+    <div class="actions"><button id="raid-cancel" class="btn-ghost">취소</button><button id="raid-save" class="btn-primary">저장</button></div>
+  </div>
+</div>
+
+<!-- 불러오기 -->
+<div id="claim-modal" class="modal">
+  <div class="modal-box">
+    <h3>캐릭터 불러오기</h3>
+    <div class="field"><label for="claim-char">캐릭터</label><select id="claim-char"></select></div>
+    <div class="field"><label for="claim-password">비밀번호</label><input id="claim-password" type="password" autocomplete="current-password"></div>
+    <p class="error" id="claim-error"></p>
+    <div class="actions"><button id="claim-cancel" class="btn-ghost">취소</button><button id="claim-ok" class="btn-primary">불러오기</button></div>
+  </div>
+</div>
+
+<!-- 확인 -->
+<div id="confirm-modal" class="modal">
+  <div class="modal-box">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-msg" style="color:var(--text-2); white-space:pre-wrap"></p>
+    <div class="actions"><button id="confirm-no" class="btn-ghost">취소</button><button id="confirm-yes" class="btn-danger">확인</button></div>
+  </div>
+</div>
+
+<script src="firebase-config.js"></script>
+<script type="module">
+import { doc, collection, writeBatch, deleteDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { db, onReady, $, esc, safeUrl, money, toast, openModal, closeModal, avatarHtml, statChips, errMsg,
+         watchCharacters, watchMyCharIds, watchWallets, claimCharacter, ensureWallets } from "./common.js";
+import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, tag } from "./duel-rules.js";
+import { newWallet, effectiveDaily, spinsLeft } from "./seomjeon-rules.js";
+import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, emptyPoints, pointsUsed, finalValue, canAdd, validateRaid } from "./raid-build.js";
+
+let uid = null, allChars = {}, myIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
+let build = DEFAULT_RAID_BUILD, buildReady = false;
+
+onReady((u) => {
+  uid = u;
+  watchCharacters(c => { allChars = c; charsLoaded = true; render(); });
+  watchMyCharIds(uid, s => { myIds = s; render(); });
+  watchWallets(w => { wallets = w; walletsLoaded = true; render(); });
+  onSnapshot(doc(db, 'siteConfig', 'raidBuild'), snap => { if (snap.exists()) { build = snap.data(); buildReady = true; } render(); }, () => {});
+});
+
+// ---------- 레이드 설정 ----------
+let raidEditing = null; // { id, position, points }
+function openRaidEditor(id) {
+  const c = allChars[id];
+  raidEditing = { id, position: c.raid?.position || null, points: { ...emptyPoints(), ...(c.raid?.points || {}) } };
+  $('raid-modal-title').textContent = `${c.name} · 레이드 설정`;
+  $('raid-error').textContent = buildReady ? '' : '관리자가 아직 성장 규칙을 저장하지 않아 기본값으로 표시합니다. 저장이 안 되면 관리자에게 알려 주세요.';
+  renderRaidEditor();
+  openModal('raid-modal');
+}
+function renderRaidEditor() {
+  const r = raidEditing;
+  $('raid-positions').innerHTML = POSITION_ORDER.filter(p => build.positions[p]).map(p =>
+    `<button type="button" class="pos-btn ${r.position === p ? 'on' : ''}" data-pos="${esc(p)}">${esc(p)}</button>`).join('');
+  $('raid-positions').querySelectorAll('[data-pos]').forEach(b => b.onclick = () => {
+    if (r.position !== b.dataset.pos) { r.position = b.dataset.pos; r.points = emptyPoints(); }
+    renderRaidEditor();
+  });
+  if (!r.position) { $('raid-body').innerHTML = `<p class="muted">포지션을 먼저 고르세요. 포지션마다 기본 스탯과 스킬이 다릅니다.</p>`; $('raid-save').disabled = true; return; }
+  $('raid-save').disabled = false;
+  const used = pointsUsed(r.points), left = build.points - used;
+  const fmt = (k, v) => `${v}${BASE_STATS.find(s => s.key === k)?.unit || ''}`;
+  const rows = BUILD_STATS.map(s => {
+    const n = r.points[s.key] || 0, v = finalValue(build, r.position, s.key, r.points);
+    return `<div class="build-row">
+      <div><b>${s.label}</b> <span class="muted">+${build.per[s.key]}${s.unit} / 정수 · 최대 ${fmt(s.key, build.max[s.key])}</span></div>
+      <div class="stepper"><button type="button" data-k="${s.key}" data-d="-1" ${n <= 0 ? 'disabled' : ''} aria-label="${s.label} 감소">−</button><span class="val">${n}</span>
+        <button type="button" data-k="${s.key}" data-d="1" ${canAdd(build, r, s.key) ? '' : 'disabled'} aria-label="${s.label} 증가">+</button></div>
+      <div class="final">${fmt(s.key, v)}</div></div>`;
+  }).join('');
+  const skills = (build.skills?.[r.position] || []).join(', ');
+  $('raid-body').innerHTML = `${rows}
+    <div class="build-row"><div><b>정신 내구도</b> <span class="muted">포지션 고정</span></div><div></div><div class="final">${finalValue(build, r.position, 'mental', r.points)}</div></div>
+    <div class="total ${left >= 0 ? 'good' : 'bad'}"><span>남은 정수</span><span>${left} / ${build.points}</span></div>
+    <p class="muted" style="margin:10px 0 0">스킬: ${esc(skills)}</p>`;
+  $('raid-body').querySelectorAll('[data-k]').forEach(b => b.onclick = () => { r.points[b.dataset.k] += Number(b.dataset.d); renderRaidEditor(); });
+}
+
+
+function render() {
+  const list = $('my-char-list');
+  if (!charsLoaded) return;
+  if (walletsLoaded) ensureWallets(myIds, allChars, wallets);
+  const mine = [...myIds].map(id => allChars[id]).filter(Boolean);
+  if (!mine.length) { list.innerHTML = `<p class="muted">아직 이 기기에 등록된 캐릭터가 없습니다. 새로 만들거나 비밀번호로 불러오세요.</p>`; return; }
+  list.innerHTML = mine.map(c => {
+    const w = wallets[c.id];
+    const wallet = w
+      ? `<span class="chip money">${money(w.balance)}</span><span class="chip">섬전 점수 ${w.totalScore}</span>${effectiveDaily(w).attended ? '' : '<span class="chip" style="color:var(--accent)">오늘 출석 전</span>'}`
+      : `<span class="chip">지갑 준비 중</span>`;
+    return `<div class="char-card">
+      ${avatarHtml(c)}
+      <div style="min-width:0"><div class="name">${esc(c.name)}</div><div class="chips">${statChips(c)}</div><div class="chips">${wallet}</div>
+        <div class="raid-summary">${c.raid ? `레이드: <b>${esc(c.raid.position)}</b> · 정수 ${pointsUsed(c.raid.points)}/${build.points} 사용` : '레이드 설정 전'}</div></div>
+      <div class="acts"><button class="btn-ghost" data-edit="${esc(c.id)}">수정</button><button class="btn-ghost" data-raid="${esc(c.id)}">레이드</button><a class="btn-primary" style="text-align:center" href="seomjeon.html?char=${encodeURIComponent(c.id)}">섬전</a></div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openEditor(b.dataset.edit));
+  list.querySelectorAll('[data-raid]').forEach(b => b.onclick = () => openRaidEditor(b.dataset.raid));
+}
+
+// ---------- 편집기 ----------
+let editing = null;
+const STAT_INFO = [
+  { key: 'hpInvest', name: '체력', desc: `외부 충격에 버티는 힘. 기본 ${BASE_HP} + 투자분. 0이 되면 패배.` },
+  { key: 'power', name: '투력', desc: '투력 수만큼 6면체를 굴려 상대 방어값보다 큰 눈마다 1 피해.' },
+  { key: 'guard', name: '저력', desc: '저력 수의 면체 1개를 굴려 그 값 이하의 공격 주사위를 상쇄.' },
+];
+function renderStats() {
+  $('c-stats').innerHTML = STAT_INFO.map(s => {
+    const v = editing[s.key], lim = STAT_LIMITS[s.key];
+    const extra = s.key === 'hpInvest' ? ` <span class="muted">(최대 체력 ${BASE_HP + v})</span>` : '';
+    return `<div class="stat"><div><div class="name">${s.name}${extra}</div><div class="desc">${s.desc} (${lim.min}~${lim.max})</div></div>
+      <div class="stepper"><button type="button" data-stat="${s.key}" data-d="-1" ${v <= lim.min ? 'disabled' : ''} aria-label="${s.name} 감소">−</button>
+      <span class="val">${v}</span><button type="button" data-stat="${s.key}" data-d="1" ${v >= lim.max ? 'disabled' : ''} aria-label="${s.name} 증가">+</button></div></div>`;
+  }).join('');
+  $('c-stats').querySelectorAll('[data-stat]').forEach(b => b.onclick = () => { editing[b.dataset.stat] += Number(b.dataset.d); renderStats(); });
+  const t = statTotal(editing), ok = t >= TOTAL_MIN && t <= TOTAL_MAX;
+  $('c-total').className = 'total ' + (ok ? 'good' : 'bad');
+  $('c-total').innerHTML = `<span>투자 합계 (${TOTAL_MIN}~${TOTAL_MAX})</span><span>${t}</span>`;
+}
+$('c-image').oninput = () => {
+  const url = safeUrl($('c-image').value.trim()), img = $('c-image-preview');
+  if (url) { img.src = url; img.classList.remove('hidden'); } else img.classList.add('hidden');
+};
+function openEditor(id = null) {
+  const c = id ? allChars[id] : null;
+  editing = c ? { id, hpInvest: c.hpInvest, power: c.power, guard: c.guard } : { id: null, hpInvest: 3, power: 3, guard: 3 };
+  $('char-modal-title').textContent = c ? '캐릭터 수정' : '캐릭터 만들기';
+  $('c-name').value = c?.name || ''; $('c-image').value = c?.imageUrl || ''; $('c-image').oninput();
+  $('c-password').value = '';
+  $('c-password-label').textContent = c ? '새 비밀번호 (바꿀 때만 입력)' : '캐릭터 비밀번호';
+  $('c-password-help').textContent = c
+    ? '비우면 기존 비밀번호를 유지합니다. 바꾸면 다른 기기와 레이드에서도 새 비밀번호를 써야 합니다.'
+    : '다른 기기에서 불러오거나 레이드에 로그인할 때 필요합니다.';
+  $('c-delete').classList.toggle('hidden', !c);
+  $('c-error').textContent = '';
+  renderStats();
+  openModal('char-modal');
+}
+$('new-char-btn').onclick = () => openEditor();
+$('c-cancel').onclick = () => closeModal('char-modal');
+
+$('c-save').onclick = async () => {
+  const name = $('c-name').value.trim(), imageUrl = $('c-image').value.trim(), password = $('c-password').value;
+  const stats = { hpInvest: editing.hpInvest, power: editing.power, guard: editing.guard };
+  const err = (m) => { $('c-error').textContent = m; };
+  if (!name) return err('이름을 입력하세요.');
+  if (imageUrl && !safeUrl(imageUrl)) return err('이미지 URL은 http(s):// 로 시작해야 합니다.');
+  if (!validateStats(stats)) return err(`투자 합계는 ${TOTAL_MIN}~${TOTAL_MAX}이어야 합니다.`);
+  if (!editing.id && !password) return err('비밀번호를 정해 주세요.');
+  $('c-save').disabled = true;
+  try {
+    const batch = writeBatch(db);
+    if (!editing.id) {
+      const ref = doc(collection(db, 'duelCharacters'));
+      batch.set(ref, { name, imageUrl, ...stats, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      batch.set(doc(db, 'duelCharSecrets', ref.id), { password });
+      batch.set(doc(db, 'duelClaims', `${uid}_${ref.id}`), { uid, charId: ref.id, password, at: serverTimestamp() });
+      batch.set(doc(db, 'wallets', ref.id), newWallet(serverTimestamp()));
+    } else {
+      const old = allChars[editing.id];
+      batch.set(doc(db, 'duelCharacters', editing.id), { name, imageUrl, ...stats, ...(old.raid && validateRaid(build, old.raid) ? { raid: old.raid } : {}), createdAt: old.createdAt ?? serverTimestamp(), updatedAt: serverTimestamp() });
+      if (password) {
+        batch.set(doc(db, 'duelCharSecrets', editing.id), { password });
+        batch.set(doc(db, 'duelClaims', `${uid}_${editing.id}`), { uid, charId: editing.id, password, at: serverTimestamp() });
+      }
+    }
+    await batch.commit();
+    closeModal('char-modal');
+    toast(editing.id ? '저장했습니다.' : '캐릭터를 만들고 $10을 받았습니다.');
+  } catch (e) { console.error(e); err(errMsg(e)); }
+  finally { $('c-save').disabled = false; }
+};
+
+function confirmBox(title, msg, yes = '확인') {
+  return new Promise(res => {
+    $('confirm-title').textContent = title; $('confirm-msg').textContent = msg; $('confirm-yes').textContent = yes;
+    openModal('confirm-modal');
+    $('confirm-yes').onclick = () => { closeModal('confirm-modal'); res(true); };
+    $('confirm-no').onclick = () => { closeModal('confirm-modal'); res(false); };
+  });
+}
+$('c-delete').onclick = async () => {
+  const c = allChars[editing.id];
+  const ok = await confirmBox('캐릭터 삭제', `${tag(c.name)}을(를) 삭제할까요? 되돌릴 수 없습니다.\n지갑의 달러와 섬전 기록도 함께 사라집니다. 이미 레이드에 추가된 캐릭터는 그 게임에 남습니다.`, '삭제');
+  if (!ok) return;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'duelCharacters', c.id));
+    batch.delete(doc(db, 'duelCharSecrets', c.id));
+    if (wallets[c.id]) batch.delete(doc(db, 'wallets', c.id));
+    await batch.commit();
+    await deleteDoc(doc(db, 'duelClaims', `${uid}_${c.id}`)).catch(() => {});
+    closeModal('char-modal'); toast('삭제했습니다.');
+  } catch (e) { console.error(e); $('c-error').textContent = errMsg(e); }
+};
+
+$('raid-cancel').onclick = () => closeModal('raid-modal');
+$('raid-save').onclick = async () => {
+  const r = raidEditing, raid = { position: r.position, points: { ...r.points } };
+  if (!validateRaid(build, raid)) { $('raid-error').textContent = '분배가 규칙에 맞지 않습니다.'; return; }
+  $('raid-save').disabled = true;
+  try {
+    await updateDoc(doc(db, 'duelCharacters', r.id), { raid, updatedAt: serverTimestamp() });
+    closeModal('raid-modal'); toast('레이드 설정을 저장했습니다.');
+  } catch (e) { console.error(e); $('raid-error').textContent = errMsg(e); }
+  finally { $('raid-save').disabled = false; }
+};
+
+// ---------- 불러오기 ----------
+$('import-char-link').onclick = (e) => {
+  e.preventDefault();
+  const others = Object.values(allChars).filter(c => !myIds.has(c.id));
+  $('claim-char').innerHTML = others.length ? others.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') : `<option value="">불러올 캐릭터가 없습니다</option>`;
+  $('claim-password').value = ''; $('claim-error').textContent = '';
+  openModal('claim-modal');
+};
+$('claim-cancel').onclick = () => closeModal('claim-modal');
+$('claim-ok').onclick = async () => {
+  const id = $('claim-char').value, pw = $('claim-password').value;
+  if (!id || !pw) { $('claim-error').textContent = '캐릭터와 비밀번호를 입력하세요.'; return; }
+  try { await claimCharacter(uid, id, pw); closeModal('claim-modal'); toast('불러왔습니다.'); }
+  catch (e) { $('claim-error').textContent = e?.code === 'permission-denied' ? '비밀번호가 맞지 않습니다.' : errMsg(e); }
+};
+document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m && m.id === 'claim-modal') closeModal(m.id); }));
+
+// 1:1 전투 화면에서 "캐릭터 만들기"로 들어온 경우
+function openFromHash() { if (location.hash === '#new') { history.replaceState(null, '', location.pathname); setTimeout(() => openEditor(), 300); } }
+openFromHash();
+window.addEventListener('hashchange', openFromHash);
+</script>
+</body>
+</html>

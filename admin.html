@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>관리자 설정 · 녹채반역</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="theme.css">
+<style>
+  button { cursor: pointer; border-radius: 8px; color: #fff; }
+  .theme-btn { color: var(--text-2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .form-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); }
+  .form-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  select.form-input { background: var(--input-bg); }
+  .panel { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 18px; padding: 20px; box-shadow: var(--shadow); backdrop-filter: blur(2px); }
+  .sec-title { font-weight: 700; font-size: 17px; margin-bottom: 12px; }
+  .muted { color: var(--text-3); font-size: 13px; }
+  .tab { padding: 10px 16px; border-bottom: 2px solid transparent; color: var(--text-2); background: none; border-radius: 0; }
+  .tab.on { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: var(--panel-2); }
+  .item.sel { outline: 2px solid var(--accent); }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #333; color: var(--text-2); white-space: nowrap; }
+  .badge.waiting, .badge.preparation { background: rgba(251,191,36,.15); color: var(--warn); }
+  .badge.active, .badge.started { background: rgba(74,222,128,.12); color: var(--accent); }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal.open { display: flex; }
+  .modal-box { background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px; padding: 22px; width: 100%; max-width: 460px; max-height: 92vh; overflow-y: auto; }
+  .stepper button { width: 32px; height: 32px; background: var(--nav-btn); color: var(--text); border: 1px solid var(--line); font-size: 18px; }
+  .accordion-header { cursor: pointer; }
+  .hidden { display: none !important; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary .chev { transform: rotate(180deg); }
+</style>
+</head>
+<body>
+<header class="flex items-center gap-3 px-5 py-3 border-b sticky top-0 z-10" style="border-color:var(--line-soft); background:var(--bg-side)">
+  <a href="index.html" class="display text-lg" style="color:var(--text); text-decoration:none">END OF VERDANT</a>
+  <h1 class="text-base font-bold pl-3 border-l" style="color:var(--text-2); border-color:var(--line)">관리자 설정</h1>
+  <nav class="flex gap-4 text-sm items-center ml-auto" style="color:var(--text-2)">
+    <a href="index.html" class="hover:underline">시작 페이지</a>
+    <button id="logout-btn" class="hidden px-3 py-1 text-sm" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)">로그아웃</button>
+    <button type="button" data-theme-toggle></button>
+  </nav>
+</header>
+
+<!-- 로그인 -->
+<section id="login-view" class="max-w-sm mx-auto mt-24 panel">
+  <h2 class="sec-title">관리자 인증</h2>
+  <p class="muted mb-4">관리자 비밀번호를 입력하세요. 인증은 이 브라우저에서 12시간 유지됩니다.</p>
+  <input id="admin-pw" type="password" class="form-input" autocomplete="current-password">
+  <p id="login-error" class="text-sm mt-2 h-5" style="color:var(--danger)"></p>
+  <button id="login-btn" class="w-full mt-3 py-2 font-bold" style="background:#16a34a">확인</button>
+</section>
+
+<main id="admin-view" class="hidden max-w-6xl mx-auto px-4 pb-16">
+  <div class="flex gap-2 border-b mb-5" style="border-color:var(--line)">
+    <button class="tab on" data-tab="raid">마스레이드</button>
+    <button class="tab" data-tab="duel">캐릭터 · 1:1 전투</button>
+  </div>
+
+  <!-- ===== 마스레이드 ===== -->
+  <section id="tab-raid" class="grid gap-5 md:grid-cols-[280px_1fr]">
+    <div class="panel self-start">
+      <div class="flex justify-between items-center mb-3"><h2 class="sec-title mb-0">게임 목록</h2><button id="raid-create-btn" class="px-3 py-1.5 text-sm font-bold" style="background:#16a34a">새 게임</button></div>
+      <div id="raid-game-list" class="flex flex-col gap-2"><p class="muted">불러오는 중...</p></div>
+    </div>
+    <div id="raid-panel"><div class="panel"><p class="muted">왼쪽에서 게임을 선택하세요.</p></div></div>
+  </section>
+
+  <!-- ===== 1:1 전투 ===== -->
+  <section id="tab-duel" class="hidden grid gap-5 md:grid-cols-2">
+    <div class="panel md:col-span-2">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3"><h2 class="sec-title mb-0">레이드 성장 규칙</h2><button id="build-save-btn" class="px-4 py-1.5 font-bold" style="background:#16a34a">저장</button></div>
+      <p class="muted mb-3">플레이어가 캐릭터 페이지에서 포지션을 고르고 정수를 나눌 때 쓰는 규칙입니다. 바꾸면 이미 저장된 설정 중 새 규칙에 맞지 않는 캐릭터는 다시 저장해야 레이드에 참가할 수 있습니다. 포지션별 스킬은 기본 스킬 목록을 따릅니다.</p>
+      <div id="build-editor" class="overflow-x-auto"><p class="muted">불러오는 중...</p></div>
+    </div>
+    <div class="panel self-start">
+      <h2 class="sec-title">캐릭터</h2>
+      <div id="duel-char-list" class="flex flex-col gap-2"><p class="muted">불러오는 중...</p></div>
+    </div>
+    <div class="panel self-start">
+      <h2 class="sec-title">전투방 <span class="muted font-normal">(최근 50개)</span></h2>
+      <div id="duel-room-list" class="flex flex-col gap-2"><p class="muted">불러오는 중...</p></div>
+    </div>
+  </section>
+</main>
+
+<!-- 공용 모달 -->
+<div id="modal" class="modal"><div class="modal-box">
+  <h3 id="modal-title" class="text-lg font-bold mb-3"></h3>
+  <div id="modal-body" style="color:var(--text-2)"></div>
+  <p id="modal-error" class="text-sm mt-2 min-h-[1.25rem]" style="color:var(--danger)"></p>
+  <div id="modal-buttons" class="flex justify-end gap-3 mt-4"></div>
+</div></div>
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-sm opacity-0 transition-opacity pointer-events-none" style="background:var(--panel-solid); color:var(--text); border:1px solid var(--line); z-index:60"></div>
+<input type="file" id="load-settings-input" class="hidden" accept=".json">
+
+<script src="firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
+         addDoc, writeBatch, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES } from "./raid-data.js";
+import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, tag } from "./duel-rules.js";
+import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, finalValue, validateRaid, raidCharacterDoc } from "./raid-build.js";
+
+const app = initializeApp(window.FIREBASE_CONFIG);
+const auth = getAuth(app);
+const db = getFirestore(app);
+let uid = null;
+
+// ================= 공통 =================
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.opacity = 1; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.opacity = 0, 1800); }
+const errMsg = (e) => e?.code === 'permission-denied' ? '권한이 없습니다. 다시 로그인해 주세요.' : '오류가 발생했습니다.';
+/** buttons: [{text, cls, onClick -> (true면 닫지 않음)}] */
+function showModal(title, bodyHtml, buttons = [{ text: '확인' }]) {
+  $('modal-title').textContent = title;
+  $('modal-body').innerHTML = bodyHtml;
+  $('modal-error').textContent = '';
+  const wrap = $('modal-buttons'); wrap.innerHTML = '';
+  buttons.forEach(b => {
+    const el = document.createElement('button');
+    el.textContent = b.text; el.className = 'px-4 py-2 font-bold'; el.style.background = b.bg || 'var(--nav-btn)'; if (!b.bg) { el.style.color = 'var(--text)'; el.style.border = '1px solid var(--line)'; }
+    el.onclick = async () => {
+      el.disabled = true;
+      try { const keep = b.onClick ? await b.onClick() : false; if (!keep) closeModal(); }
+      catch (e) { console.error(e); $('modal-error').textContent = errMsg(e); }
+      finally { el.disabled = false; }
+    };
+    wrap.appendChild(el);
+  });
+  $('modal').classList.add('open');
+}
+const closeModal = () => $('modal').classList.remove('open');
+const modalError = (m) => { $('modal-error').textContent = m; return true; };
+const confirmDanger = (title, msg, onYes, yes = '확인') =>
+  showModal(title, `<p style="white-space:pre-wrap">${esc(msg)}</p>`, [{ text: '취소' }, { text: yes, bg: '#b91c1c', onClick: onYes }]);
+async function deleteCollection(path, extra = null) {
+  const snap = await getDocs(collection(db, ...path));
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 400).forEach(d => { batch.delete(d.ref); if (extra) extra(batch, d); });
+    await batch.commit();
+  }
+  return snap.size;
+}
+
+// ================= 관리자 인증 =================
+const ADMIN_HASH_SALT = 'endofverdant-raid-admin:';
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function probeAdmin() {
+  try { await getDocs(query(collection(db, 'characterPresets'), limit(1))); return true; } catch { return false; }
+}
+async function login() {
+  const pw = $('admin-pw').value; $('admin-pw').value = '';
+  $('login-error').textContent = '';
+  try {
+    await setDoc(doc(db, 'siteAdmins', uid), { passwordHash: await sha256Hex(ADMIN_HASH_SALT + pw), at: serverTimestamp() });
+    enterAdmin();
+  } catch (e) {
+    $('login-error').textContent = e?.code === 'permission-denied' ? '비밀번호가 올바르지 않습니다.' : '오류가 발생했습니다.';
+  }
+}
+$('login-btn').onclick = login;
+$('admin-pw').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+$('logout-btn').onclick = async () => {
+  try { await deleteDoc(doc(db, 'siteAdmins', uid)); } catch {}
+  location.reload();
+};
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { signInAnonymously(auth).catch(console.error); return; }
+  uid = user.uid;
+  if (await probeAdmin()) enterAdmin();
+});
+let entered = false;
+function enterAdmin() {
+  if (entered) return; entered = true;
+  $('login-view').classList.add('hidden');
+  $('admin-view').classList.remove('hidden');
+  $('logout-btn').classList.remove('hidden');
+  loadRaidGames();
+  listenDuelAdmin();
+  loadRaidBuild().catch(e => { console.error(e); $('build-editor').innerHTML = `<p class="muted">${errMsg(e)}</p>`; });
+  const pre = new URLSearchParams(location.search).get('raid');
+  if (pre) selectRaidGame(pre.toUpperCase());
+}
+document.querySelectorAll('[data-tab]').forEach(t => t.onclick = () => {
+  document.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === t));
+  $('tab-raid').classList.toggle('hidden', t.dataset.tab !== 'raid');
+  $('tab-duel').classList.toggle('hidden', t.dataset.tab !== 'duel');
+});
+
+// ================= 마스레이드 =================
+let gameId = null, game = null, characters = [], charSecrets = {};
+let SKILLS = {};
+let unsubs = [];
+const STATE_LABEL = { PREPARATION: '준비 단계', STARTED: '진행 중', ENDED: '종료' };
+
+async function loadRaidGames() {
+  const list = $('raid-game-list');
+  try {
+    const snap = await getDocs(collection(db, 'games'));
+    const games = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0) || a.id.localeCompare(b.id));
+    if (!games.length) { list.innerHTML = `<p class="muted">게임이 없습니다.</p>`; return; }
+    list.innerHTML = games.map(g => `<button class="item text-left w-full ${g.id === gameId ? 'sel' : ''}" data-game="${esc(g.id)}" style="color:var(--text)">
+      <span class="font-mono font-bold flex-1">${esc(g.id)}</span>
+      <span class="badge ${String(g.gameState || 'PREPARATION').toLowerCase()}">${STATE_LABEL[g.gameState] || '준비 단계'}${g.gameState === 'STARTED' ? ` · ${g.round || 1}R` : ''}</span></button>`).join('');
+    list.querySelectorAll('[data-game]').forEach(b => b.onclick = () => selectRaidGame(b.dataset.game));
+  } catch (e) { console.error(e); list.innerHTML = `<p class="muted">${errMsg(e)}</p>`; }
+}
+
+function generateGameId() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+$('raid-create-btn').onclick = async () => {
+  try {
+    let id; do { id = generateGameId(); } while ((await getDoc(doc(db, 'games', id))).exists());
+    await setDoc(doc(db, 'games', id), {
+      skills: DEFAULT_SKILLS, currentTurnCharId: null, turnQueue: [], activeExtraUsed: false,
+      gameState: 'PREPARATION', round: 1, maxRounds: 0, isAdminMoveAllowed: true,
+      boardBackgroundImage: '', pageBackgroundImage: '', createdAt: serverTimestamp()
+    });
+    await setDoc(doc(db, 'games', id, 'board', 'tiles'), { tiles: {} });
+    await addDoc(collection(db, 'games', id, 'logs'), { message: '⚔️ 새로운 게임이 시작되었습니다! 게임 로그가 초기화되었습니다.', type: 'system', timestamp: serverTimestamp() });
+    await loadRaidGames();
+    selectRaidGame(id);
+    toast(`게임 ${id}를 만들었습니다.`);
+  } catch (e) { console.error(e); toast(errMsg(e)); }
+};
+
+async function logAction(message, type = 'admin') {
+  if (gameId) await addDoc(collection(db, 'games', gameId, 'logs'), { message, type, timestamp: serverTimestamp() });
+}
+function setCharacterInBatch(batch, charRef, charData) {
+  const { password, id, ...publicData } = charData;
+  batch.set(charRef, publicData);
+  if (publicData.type === 'PC' && !publicData.sharedCharId) {
+    batch.set(doc(db, 'games', gameId, 'charSecrets', charRef.id), {
+      password: (password ?? '') !== '' ? String(password) : DEFAULT_PC_PASSWORD
+    });
+  }
+}
+async function addCharacter(charData) {
+  const batch = writeBatch(db);
+  // 공유 캐릭터는 문서 ID를 캐릭터 ID로 맞춰 한 게임에 한 번만 들어가게 합니다.
+  const ref = charData.sharedCharId ? doc(db, 'games', gameId, 'characters', charData.sharedCharId) : doc(collection(db, 'games', gameId, 'characters'));
+  setCharacterInBatch(batch, ref, charData);
+  await batch.commit();
+}
+
+function selectRaidGame(id) {
+  unsubs.forEach(u => u()); unsubs = [];
+  gameId = id; game = null; characters = []; charSecrets = {}; SKILLS = {};
+  lastSkillsKey = null;
+  document.querySelectorAll('#raid-game-list [data-game]').forEach(b => b.classList.toggle('sel', b.dataset.game === id));
+  history.replaceState(null, '', `?raid=${encodeURIComponent(id)}`);
+  $('raid-panel').innerHTML = `<div class="panel"><p class="muted">불러오는 중...</p></div>`;
+  unsubs.push(onSnapshot(doc(db, 'games', id), snap => {
+    if (!snap.exists()) { $('raid-panel').innerHTML = `<div class="panel"><p class="muted">게임 ${esc(id)}을(를) 찾을 수 없습니다.</p></div>`; return; }
+    const first = !game;
+    game = snap.data();
+    SKILLS = game.skills || {};
+    if (first) { renderRaidPanel(); migrateLegacy(); }
+    else { renderRaidStatus(); renderSkills(); }
+  }, e => { $('raid-panel').innerHTML = `<div class="panel"><p class="muted">${errMsg(e)}</p></div>`; }));
+  unsubs.push(onSnapshot(collection(db, 'games', id, 'characters'), snap => {
+    characters = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.turnOrder ?? 0) - (b.turnOrder ?? 0));
+    renderRaidChars();
+  }));
+  unsubs.push(onSnapshot(collection(db, 'games', id, 'charSecrets'), snap => {
+    charSecrets = {}; snap.docs.forEach(d => { charSecrets[d.id] = d.data().password ?? ''; });
+  }));
+}
+
+// 예전 방식으로 공개 문서에 남은 비밀번호를 비공개 위치로 이전
+async function migrateLegacy() {
+  try {
+    if (game && 'adminPassword' in game) await updateDoc(doc(db, 'games', gameId), { adminPassword: deleteField() });
+    const snap = await getDocs(collection(db, 'games', gameId, 'characters'));
+    const legacy = snap.docs.filter(d => 'password' in d.data());
+    if (!legacy.length) return;
+    const batch = writeBatch(db);
+    legacy.forEach(d => {
+      const c = d.data();
+      if (c.type === 'PC') batch.set(doc(db, 'games', gameId, 'charSecrets', d.id), { password: c.password || DEFAULT_PC_PASSWORD });
+      batch.update(d.ref, { password: deleteField() });
+    });
+    await batch.commit();
+  } catch (e) { console.error('비밀번호 이전 실패', e); }
+}
+
+const SECTION_COLOR = { '#FBBF24': 'var(--warn)', '#4ADE80': 'var(--accent)', '#F87171': 'var(--danger)' };
+const section = (title, body, colorKey = '#FBBF24', open = true, color = SECTION_COLOR[colorKey] || colorKey) =>
+  `<details class="panel" ${open ? 'open' : ''}><summary class="flex justify-between items-center"><span class="sec-title mb-0" style="color:${color}">${title}</span><span class="chev transition-transform muted">▼</span></summary><div class="mt-4">${body}</div></details>`;
+const btn = (id, text, bg, extra = '') => `<button id="${id}" class="w-full p-2 font-medium" style="background:${bg}" ${extra}>${text}</button>`;
+
+function renderRaidPanel() {
+  const g = game;
+  $('raid-panel').innerHTML = `<div class="flex flex-col gap-4">
+    <div class="panel flex flex-wrap justify-between items-center gap-3">
+      <div><div class="muted">게임 코드</div><div class="font-mono text-2xl font-bold">${esc(gameId)}</div><div id="raid-status" class="mt-1"></div></div>
+      <div class="flex gap-2 flex-wrap">
+        <a href="raid.html?game=${encodeURIComponent(gameId)}" target="_blank" rel="noopener" class="px-4 py-2 font-bold rounded-md" style="background:#4f46e5">레이드 화면 열기 ↗</a>
+        <button id="delete-game-btn" class="px-4 py-2" style="background:#7f1d1d">게임 삭제</button>
+      </div>
+      <p class="muted w-full">게임 시작, 라운드 강제 종료, 맵 지형 편집, 적 행동 자동 실행은 레이드 화면에서 관리자로 로그인해 진행합니다.</p>
+    </div>
+
+    ${section('게임 진행 관리', `
+      <div class="grid grid-cols-2 gap-3">
+        ${btn('set-prep-phase-btn', '준비 단계로 설정', '#2563eb')}
+        ${btn('reset-board-pos-btn', '보드 초기화 (미배치)', '#b91c1c')}
+        ${btn('clear-log-btn', '📜 게임 로그 지우기', '#a16207')}
+        ${btn('reset-all-game-btn', '⚠️ 전체 게임 재시작', '#7f1d1d')}
+      </div>
+      <div class="mt-4 grid sm:grid-cols-2 gap-4 items-end">
+        <div><label class="block text-sm" style="color:var(--text-2)">최대 라운드 (0=무한)</label>
+          <div class="flex gap-2 mt-1"><input type="number" id="max-rounds-input" class="form-input" value="${g.maxRounds || 0}"><button id="save-max-rounds-btn" class="px-4" style="background:#4f46e5">저장</button></div></div>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="admin-move-toggle" class="h-5 w-5" ${g.isAdminMoveAllowed !== false ? 'checked' : ''}> 관리자 토큰 이동 허용 (턴 무시)</label>
+      </div>`)}
+
+    ${section('배경', `
+      <label class="block text-sm" style="color:var(--text-2)">게임 보드 배경 URL</label>
+      <div class="flex gap-2 mt-1 mb-4"><input type="text" id="board-bg-url" class="form-input" placeholder="이미지 URL" value="${esc(g.boardBackgroundImage || '')}"><button id="save-board-bg-btn" class="px-4" style="background:#4f46e5">적용</button></div>
+      <label class="block text-sm" style="color:var(--text-2)">전체 페이지 배경 URL</label>
+      <div class="flex gap-2 mt-1"><input type="text" id="page-bg-url" class="form-input" placeholder="이미지 URL" value="${esc(g.pageBackgroundImage || '')}"><button id="save-page-bg-btn" class="px-4" style="background:#4f46e5">적용</button></div>`, '#FBBF24', false)}
+
+    ${section('방 설정 저장/불러오기', `
+      <p class="muted mb-3">캐릭터(PC 비밀번호 포함), 스킬, 맵 설정을 파일로 저장하거나 불러와 덮어씁니다.</p>
+      <div class="grid grid-cols-2 gap-3">${btn('save-settings-btn', '설정 파일로 저장하기', '#2563eb')}${btn('load-settings-btn', '파일에서 불러오기', '#16a34a')}</div>`, '#FBBF24', false)}
+
+    ${section('캐릭터', `<div id="raid-char-list" class="flex flex-col gap-2"></div>`, '#4ADE80')}
+
+    ${section('🐉 레이드 보스 카탈로그', `
+      <div class="flex flex-col gap-2">
+        ${RAID_ENEMY_CATALOG.bosses.map(boss => `<div class="item"><div class="flex-1"><span class="font-bold" style="color:var(--danger)">${esc(boss.name)}</span>
+          <span class="text-xs muted ml-2">신체 ${boss.bodyHp} · 운용 ${boss.op} · 방어 ${boss.defPct}%</span><p class="text-xs muted">${esc(boss.desc || '')}</p></div>
+          <button data-boss-key="${esc(boss.name)}" class="spawn-boss-btn text-xs px-3 py-1" style="background:#991b1b">소환</button></div>`).join('')}
+        <h5 class="text-sm font-bold mt-3" style="color:var(--warn)">서브몬스터</h5>
+        ${RAID_ENEMY_CATALOG.subTypes.map(sub => `<div class="item"><div class="flex-1"><span class="font-bold" style="color:var(--warn)">${esc(sub.label)}</span>
+          <span class="text-xs muted ml-2">신체 ${sub.bodyHp} · 운용 ${sub.op} · 속도 ${sub.speed}</span></div>
+          <button data-sub-key="${esc(sub.key)}" class="spawn-sub-btn text-xs px-3 py-1" style="background:#9a3412">소환</button></div>`).join('')}
+      </div>`, '#F87171', false)}
+
+    ${section('새 캐릭터/에너미 추가', getNewCharacterFormHtml(), '#4ADE80', false)}
+    ${section('저장된 캐릭터 프리셋', `<p class="muted mb-3">레이드 화면의 캐릭터 수정 창에서 프리셋으로 저장한 PC를 이 게임에 추가합니다.</p><div id="character-preset-list"><p class="muted">불러오는 중...</p></div>`, '#4ADE80', false)}
+    ${section('스킬 목록/편집', `<div id="admin-skill-list"></div>`, '#4ADE80', false)}
+    ${section('새 스킬 추가', getNewSkillFormHtml(), '#4ADE80', false)}
+  </div>`;
+  renderRaidStatus();
+  renderRaidChars();
+  renderSkills();
+  loadCharacterPresets();
+  bindRaidPanel();
+}
+
+function renderRaidStatus() {
+  const el = $('raid-status'); if (!el || !game) return;
+  const st = game.gameState || 'PREPARATION';
+  el.innerHTML = `<span class="badge ${st.toLowerCase()}">${STATE_LABEL[st]}${st === 'STARTED' ? ` · ${game.round || 1}라운드` : ''}</span>
+    <span class="muted ml-2">최대 라운드 ${game.maxRounds ? game.maxRounds : '무한'}</span>`;
+}
+
+function renderRaidChars() {
+  const el = $('raid-char-list'); if (!el) return;
+  if (!characters.length) { el.innerHTML = `<p class="muted">캐릭터가 없습니다.</p>`; return; }
+  el.innerHTML = characters.map(c => `<div class="item">
+    <div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(c.name)} <span class="text-xs muted">${c.type}${c.position ? ` · ${esc(c.position)}` : ''}</span>${c.sharedCharId ? ` <span class="badge active">공유 캐릭터</span>` : ''}</div>
+      <div class="text-xs muted">신체 ${c.bodyHp ?? c.hp}/${c.maxBodyHp ?? c.maxHp} · 정신 ${c.mentalHp ?? c.mp}/${c.maxMentalHp ?? c.maxMp} · ${c.x === null || c.x === undefined ? '미배치' : `(${c.x}, ${c.y})`}</div></div>
+    ${c.sharedCharId ? `<button data-sync="${esc(c.id)}" class="text-xs px-3 py-1" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)" title="캐릭터 페이지의 이름·이미지를 다시 가져옵니다">이름·이미지 갱신</button>` : ''}
+    ${c.type === 'PC' && !c.sharedCharId ? `<button data-pw="${esc(c.id)}" class="text-xs px-3 py-1" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)">비밀번호</button>` : ''}
+    <button data-del="${esc(c.id)}" class="text-xs px-3 py-1" style="background:#7f1d1d">삭제</button></div>`).join('');
+  el.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => {
+    const c = characters.find(x => x.id === b.dataset.pw);
+    showModal(`${c.name} 비밀번호`, `<input id="pc-pw" class="form-input" value="${esc(charSecrets[c.id] ?? DEFAULT_PC_PASSWORD)}">`, [
+      { text: '취소' },
+      { text: '저장', bg: '#16a34a', onClick: async () => {
+        const v = $('pc-pw').value; if (!v) return modalError('비밀번호를 입력하세요.');
+        await setDoc(doc(db, 'games', gameId, 'charSecrets', c.id), { password: v }); toast('저장했습니다.');
+      } }]);
+  });
+  el.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => {
+    const c = characters.find(x => x.id === b.dataset.sync);
+    const src = duelChars.find(x => x.id === c.sharedCharId);
+    if (!src) return showModal('갱신 불가', '원본 캐릭터가 삭제되었습니다.');
+    await updateDoc(doc(db, 'games', gameId, 'characters', c.id), { name: src.name, imageUrl: src.imageUrl || '' });
+    toast('갱신했습니다.');
+  });
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const c = characters.find(x => x.id === b.dataset.del);
+    confirmDanger('캐릭터 삭제', `'${c.name}'을(를) 이 게임에서 삭제할까요?`, async () => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'games', gameId, 'characters', c.id));
+      batch.delete(doc(db, 'games', gameId, 'charSecrets', c.id));
+      await batch.commit();
+      await logAction(`🗑️ 관리자가 '${c.name}' 캐릭터를 삭제했습니다.`);
+    }, '삭제');
+  });
+}
+
+function bindRaidPanel() {
+  $('delete-game-btn').onclick = () => confirmDanger('게임 삭제', `게임 ${gameId}의 캐릭터, 로그, 맵을 모두 삭제합니다. 되돌릴 수 없습니다.`, async () => {
+    const id = gameId;
+    unsubs.forEach(u => u()); unsubs = [];
+    for (const sub of ['characters', 'charSecrets', 'logs', 'combatEvents', 'board', 'pcLogins']) await deleteCollection(['games', id, sub]);
+    await deleteDoc(doc(db, 'games', id));
+    gameId = null; game = null;
+    history.replaceState(null, '', location.pathname);
+    $('raid-panel').innerHTML = `<div class="panel"><p class="muted">게임 ${esc(id)}을(를) 삭제했습니다.</p></div>`;
+    loadRaidGames();
+  }, '삭제');
+
+  $('set-prep-phase-btn').onclick = async () => {
+    try {
+      await updateDoc(doc(db, 'games', gameId), { gameState: 'PREPARATION', currentTurnCharId: null, turnQueue: [], activeExtraUsed: false, round: 1 });
+      const batch = writeBatch(db);
+      characters.forEach(c => batch.update(doc(db, 'games', gameId, 'characters', c.id), { hasActedThisRound: false }));
+      await batch.commit();
+      await logAction('🛠️ 관리자가 게임을 준비 단계로 설정했습니다.', 'system');
+      toast('준비 단계로 설정했습니다.');
+    } catch (e) { console.error(e); toast(errMsg(e)); }
+  };
+  $('reset-board-pos-btn').onclick = () => confirmDanger('보드 초기화', '모든 캐릭터를 미배치 상태로 되돌립니다.', async () => {
+    const batch = writeBatch(db);
+    characters.forEach(c => batch.update(doc(db, 'games', gameId, 'characters', c.id), { x: null, y: null }));
+    await batch.commit();
+    await logAction('🔄 관리자가 모든 캐릭터를 미배치 상태로 되돌렸습니다.');
+  });
+  $('reset-all-game-btn').onclick = () => confirmDanger('전체 초기화', '모든 캐릭터의 체력·상태·위치와 맵 지형이 초기화되고 준비 단계로 돌아갑니다. 계속할까요?', async () => {
+    const batch = writeBatch(db);
+    characters.forEach(c => batch.update(doc(db, 'games', gameId, 'characters', c.id), {
+      bodyHp: c.maxBodyHp ?? c.maxHp ?? 100, mentalHp: c.maxMentalHp ?? c.maxMp ?? 50,
+      hp: c.maxBodyHp ?? c.maxHp ?? 100, mp: c.maxMentalHp ?? c.maxMp ?? 50,
+      x: null, y: null, statusEffects: [], hasActedThisRound: false, isLastFallen: false, totalDamage: 0
+    }));
+    await batch.commit();
+    await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: {} });
+    await setDoc(doc(db, 'games', gameId), { gameState: 'PREPARATION', currentTurnCharId: null, turnQueue: [], activeExtraUsed: false, round: 1, gameResult: deleteField() }, { merge: true });
+    await logAction('⚠️ 관리자가 전체 게임을 초기화했습니다. 모든 캐릭터의 HP가 회복되고 재배치를 기다립니다.');
+  }, '초기화');
+  $('clear-log-btn').onclick = () => confirmDanger('로그 삭제', '게임 로그를 모두 삭제할까요? 되돌릴 수 없습니다.', async () => {
+    await deleteCollection(['games', gameId, 'logs']);
+    await logAction('📜 관리자가 모든 게임 로그를 삭제했습니다.');
+  }, '삭제');
+  $('save-max-rounds-btn').onclick = async () => {
+    const n = parseInt($('max-rounds-input').value) || 0;
+    await updateDoc(doc(db, 'games', gameId), { maxRounds: n });
+    toast(`최대 라운드: ${n > 0 ? n : '무한'}`);
+  };
+  $('admin-move-toggle').onchange = async (e) => {
+    await setDoc(doc(db, 'games', gameId), { isAdminMoveAllowed: e.target.checked }, { merge: true });
+    await logAction(`👮 관리자 토큰 이동 권한이 ${e.target.checked ? '허용' : '제한'}되었습니다.`, 'admin-move');
+  };
+  $('save-board-bg-btn').onclick = async () => {
+    await setDoc(doc(db, 'games', gameId), { boardBackgroundImage: $('board-bg-url').value.trim() }, { merge: true });
+    await logAction('🖼️ 관리자가 보드 배경을 설정했습니다.'); toast('적용했습니다.');
+  };
+  $('save-page-bg-btn').onclick = async () => {
+    await setDoc(doc(db, 'games', gameId), { pageBackgroundImage: $('page-bg-url').value.trim() }, { merge: true });
+    await logAction('🖼️ 관리자가 전체 페이지 배경을 설정했습니다.'); toast('적용했습니다.');
+  };
+  $('save-settings-btn').onclick = saveSettingsToFile;
+  $('load-settings-btn').onclick = () => $('load-settings-input').click();
+
+  document.querySelectorAll('.spawn-boss-btn').forEach(b => b.onclick = async () => {
+    const boss = RAID_ENEMY_CATALOG.bosses.find(x => x.name === b.dataset.bossKey); if (!boss) return;
+    await addCharacter({
+      name: boss.name, type: 'ENEMY', imageUrl: boss.imageUrl || '', isBoss: true,
+      stunImmune: boss.stunImmune || false, stunImmuneAfterOne: boss.stunImmuneAfterOne || false, stunUsedOnce: false,
+      bodyHp: boss.bodyHp, maxBodyHp: boss.maxBodyHp, mentalHp: boss.mentalHp ?? 0, maxMentalHp: boss.maxMentalHp ?? 0,
+      hp: boss.bodyHp, maxHp: boss.maxBodyHp, mp: 0, maxMp: 0,
+      op: boss.op, defPct: boss.defPct, hitPct: boss.hitPct, speed: boss.speed, moveRange: boss.moveRange,
+      size: 2, skills: boss.skills || [], x: null, y: null, isLoggedIn: false, hasActedThisRound: false,
+      statusEffects: [], isLastFallen: false, totalDamage: 0, turnOrder: characters.length + 1
+    });
+    toast(`${boss.name} 추가`);
+  });
+  document.querySelectorAll('.spawn-sub-btn').forEach(b => b.onclick = async () => {
+    const sub = RAID_ENEMY_CATALOG.subTypes.find(s => s.key === b.dataset.subKey); if (!sub) return;
+    const effects = (sub.defaultEffects || []).map(e => { const base = PREDEFINED_EFFECTS[e.id]; return base ? { ...base, turnsRemaining: e.turns, isNew: true } : null; }).filter(Boolean);
+    await addCharacter({
+      name: sub.label, type: 'ENEMY', imageUrl: sub.imageUrl || '',
+      bodyHp: sub.bodyHp, maxBodyHp: sub.bodyHp, mentalHp: 0, maxMentalHp: 0, hp: sub.bodyHp, maxHp: sub.bodyHp, mp: 0, maxMp: 0,
+      op: sub.op, defPct: sub.defPct ?? 0, hitPct: sub.hitPct ?? 100, speed: sub.speed, moveRange: sub.moveRange,
+      size: 1, skills: sub.skills || [], x: null, y: null, isLoggedIn: false, hasActedThisRound: false,
+      statusEffects: effects, isLastFallen: false, totalDamage: 0, turnOrder: characters.length + 1
+    });
+    toast(`${sub.label} 추가`);
+  });
+
+  $('new-char-position').onchange = (e) => { const s = POSITIONS[e.target.value]; if (s) $('new-char-skills').value = s.join(','); };
+  fillSharedSelect();
+  $('new-char-shared').onchange = () => {
+    const src = duelChars.find(x => x.id === $('new-char-shared').value);
+    $('new-char-name').readOnly = $('new-char-imageUrl').readOnly = !!src;
+    $('new-char-type').disabled = !!src;
+    $('new-char-password-wrap').classList.toggle('hidden', !!src);
+    if (src) {
+      $('new-char-name').value = src.name; $('new-char-imageUrl').value = src.imageUrl || ''; $('new-char-type').value = 'PC';
+      if (src.raid && validateRaid(raidBuild, src.raid)) {
+        const d = raidCharacterDoc(src, raidBuild, 0);
+        $('new-char-position').value = d.position; $('new-char-skills').value = d.skills.join(',');
+        $('new-char-bodyHp').value = d.maxBodyHp; $('new-char-mentalHp').value = d.maxMentalHp; $('new-char-op').value = d.op;
+        $('new-char-defPct').value = d.defPct; $('new-char-hitPct').value = d.hitPct; $('new-char-speed').value = d.speed;
+        $('new-char-moveRange').value = d.moveRange; $('new-char-size').value = 1;
+        toast('플레이어가 정한 레이드 설정을 불러왔습니다.');
+      }
+    }
+    else { $('new-char-name').value = ''; $('new-char-imageUrl').value = ''; }
+  };
+  $('add-new-char-btn').onclick = async () => {
+    const name = $('new-char-name').value.trim();
+    if (!name) return showModal('오류', '이름을 입력해야 합니다.');
+    const sharedCharId = $('new-char-shared').value || null;
+    const type = sharedCharId ? 'PC' : $('new-char-type').value;
+    if (sharedCharId && characters.some(c => c.sharedCharId === sharedCharId)) return showModal('오류', '이 공유 캐릭터는 이미 이 게임에 있습니다.');
+    const bodyHp = parseInt($('new-char-bodyHp').value) || 100, mentalHp = parseInt($('new-char-mentalHp').value) || 80;
+    await addCharacter({
+      ...(sharedCharId ? { sharedCharId } : {}),
+      name, type, imageUrl: $('new-char-imageUrl').value.trim(), position: $('new-char-position').value,
+      bodyHp, maxBodyHp: bodyHp, mentalHp, maxMentalHp: mentalHp, hp: bodyHp, maxHp: bodyHp, mp: mentalHp, maxMp: mentalHp,
+      op: parseInt($('new-char-op').value) || 15, defPct: parseInt($('new-char-defPct').value) || 10, hitPct: parseInt($('new-char-hitPct').value) || 80,
+      speed: parseFloat($('new-char-speed').value) || 5, moveRange: parseInt($('new-char-moveRange').value) || 3,
+      size: parseInt($('new-char-size').value) || 1,
+      skills: $('new-char-skills').value.split(',').map(s => s.trim()).filter(Boolean),
+      x: null, y: null, password: type === 'PC' ? ($('new-char-password').value || DEFAULT_PC_PASSWORD) : '',
+      isLoggedIn: false, hasActedThisRound: false, statusEffects: [], isLastFallen: false, totalDamage: 0, turnOrder: characters.length + 1
+    });
+    $('new-char-name').value = ''; $('new-char-password').value = ''; $('new-char-shared').value = ''; $('new-char-shared').onchange();
+    toast(`'${name}' 추가`);
+  };
+  $('add-new-skill-btn').onclick = addNewSkill;
+}
+
+// ---- 프리셋 ----
+async function loadCharacterPresets() {
+  const el = $('character-preset-list'); if (!el) return;
+  try {
+    const snap = await getDocs(collection(db, 'characterPresets'));
+    if (snap.empty) { el.innerHTML = `<p class="muted">저장된 프리셋이 없습니다.</p>`; return; }
+    el.innerHTML = snap.docs.map(d => { const p = d.data(); return `<div class="item mb-2"><span class="flex-1">${esc(p.name)} ${p.position ? `<span class="text-xs muted">(${esc(p.position)})</span>` : ''}</span>
+      <button data-spawn="${d.id}" class="text-xs px-3 py-1" style="background:#4338ca">추가</button><button data-pdel="${d.id}" class="text-xs px-3 py-1" style="background:#7f1d1d">삭제</button></div>`; }).join('');
+    el.querySelectorAll('[data-spawn]').forEach(b => b.onclick = async () => {
+      const p = (await getDoc(doc(db, 'characterPresets', b.dataset.spawn))).data(); if (!p) return;
+      await addCharacter({
+        name: p.name, type: 'PC', imageUrl: p.imageUrl || '', position: p.position || '',
+        bodyHp: p.maxBodyHp, maxBodyHp: p.maxBodyHp, mentalHp: p.maxMentalHp, maxMentalHp: p.maxMentalHp,
+        hp: p.maxBodyHp, maxHp: p.maxBodyHp, mp: p.maxMentalHp, maxMp: p.maxMentalHp,
+        op: p.op, defPct: p.defPct, hitPct: p.hitPct, speed: p.speed, moveRange: p.moveRange,
+        size: p.size || 1, skills: p.skills || [], x: null, y: null, password: DEFAULT_PC_PASSWORD,
+        isLoggedIn: false, hasActedThisRound: false, statusEffects: [], isLastFallen: false, totalDamage: 0, turnOrder: characters.length + 1
+      });
+      toast(`${p.name} 추가`);
+    });
+    el.querySelectorAll('[data-pdel]').forEach(b => b.onclick = () => confirmDanger('프리셋 삭제', '이 프리셋을 영구 삭제할까요?', async () => {
+      await deleteDoc(doc(db, 'characterPresets', b.dataset.pdel)); loadCharacterPresets();
+    }, '삭제'));
+  } catch (e) { el.innerHTML = `<p class="muted">${errMsg(e)}</p>`; }
+}
+
+// ---- 설정 파일 ----
+async function saveSettingsToFile() {
+  const data = {
+    gameSettings: { skills: SKILLS, maxRounds: game.maxRounds || 0, boardBackgroundImage: game.boardBackgroundImage || '', pageBackgroundImage: game.pageBackgroundImage || '', isAdminMoveAllowed: game.isAdminMoveAllowed !== false },
+    boardTiles: (await getDoc(doc(db, 'games', gameId, 'board', 'tiles'))).data()?.tiles || {},
+    characters: characters.map(({ id, ...c }) => c.type === 'PC' && !c.sharedCharId ? { ...c, password: charSecrets[id] ?? DEFAULT_PC_PASSWORD } : c)
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `game-settings-${gameId}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  await logAction('💾 관리자가 현재 게임 설정을 파일로 저장했습니다.');
+}
+$('load-settings-input').onchange = (e) => {
+  const file = e.target.files[0]; e.target.value = null; if (!file || !gameId) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let settings;
+    try { settings = JSON.parse(reader.result); if (!settings.gameSettings || !settings.boardTiles || !settings.characters) throw 0; }
+    catch { return showModal('오류', '올바르지 않은 설정 파일입니다.'); }
+    confirmDanger('설정 불러오기', `게임 ${gameId}의 모든 캐릭터, 스킬, 맵 설정이 파일 내용으로 완전히 교체됩니다. 되돌릴 수 없습니다.`, async () => {
+      await deleteCollection(['games', gameId, 'characters'], (batch, d) => batch.delete(doc(db, 'games', gameId, 'charSecrets', d.id)));
+      for (let i = 0; i < settings.characters.length; i += 200) {
+        const batch = writeBatch(db);
+        settings.characters.slice(i, i + 200).forEach(c => setCharacterInBatch(batch, doc(collection(db, 'games', gameId, 'characters')), c));
+        await batch.commit();
+      }
+      const { adminPassword: _ignored, ...safe } = settings.gameSettings;
+      await updateDoc(doc(db, 'games', gameId), safe);
+      await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: settings.boardTiles });
+      await logAction('📂 관리자가 파일에서 게임 설정을 불러왔습니다. 모든 데이터가 교체되었습니다.');
+      toast('불러왔습니다.');
+    }, '덮어쓰기');
+  };
+  reader.readAsText(file);
+};
+
+// ---- 스킬 ----
+let lastSkillsKey = null;
+function renderSkills() {
+  const el = $('admin-skill-list'); if (!el) return;
+  const key = JSON.stringify(SKILLS);
+  if (key === lastSkillsKey) return; // 변경이 없으면 편집 중인 입력을 지우지 않음
+  lastSkillsKey = key;
+  const byCat = Object.values(SKILLS).reduce((acc, s) => { (acc[s.category || 'Other'] ||= []).push(s); return acc; }, {});
+  let html = '';
+  SKILL_CATEGORIES.forEach(cat => {
+    const list = byCat[cat]; if (!list?.length) return;
+    html += `<h4 class="font-bold text-lg mt-4 mb-2 pb-1 border-b" style="border-color:var(--line)">${cat} 스킬</h4><div class="flex flex-col gap-2">`;
+    list.sort((a, b) => a.name.localeCompare(b.name)).forEach(s => {
+      const cost = [s.mpCost > 0 ? `${s.mpCost} 정신` : '', s.hpCost > 0 ? `${s.hpCost} 신체` : ''].filter(Boolean).join(', ');
+      html += `<details class="rounded-md border" style="background:var(--panel-2); border-color:var(--line)">
+        <summary class="p-3"><div class="font-bold">${esc(s.icon || '')} ${esc(s.name)} <span class="text-sm muted">(${esc(s.id)})</span></div>
+          <p class="text-xs muted mt-1">비용: ${cost || '없음'} | 범위: ${s.range} | 계수: ${s.multiplier} | 타입: ${esc(s.type)}</p></summary>
+        <div class="p-4 border-t" style="border-color:var(--line)">${getSkillEditFormHtml(s)}</div></details>`;
+    });
+    html += `</div>`;
+  });
+  el.innerHTML = html || `<p class="muted">스킬이 없습니다.</p>`;
+  el.querySelectorAll('.save-skill-btn').forEach(b => b.onclick = () => saveSkill(b.dataset.skillId));
+  el.querySelectorAll('.delete-skill-btn').forEach(b => b.onclick = () =>
+    confirmDanger('스킬 삭제', `'${b.dataset.skillName}' 스킬을 삭제할까요? 이 스킬을 가진 모든 캐릭터에서 제거됩니다.`, () => deleteSkill(b.dataset.skillId, b.dataset.skillName), '삭제'));
+}
+const sid = (prefix, id) => document.getElementById(`${prefix}-${id}`);
+async function saveSkill(id) {
+  const updated = {
+    ...SKILLS[id],
+    name: sid('admin-name', id).value, range: parseFloat(sid('admin-range', id).value), rangeShape: sid('admin-rangeShape', id).value,
+    multiplier: parseFloat(sid('admin-multiplier', id).value), type: sid('admin-type', id).value, icon: sid('admin-icon', id).value,
+    category: sid('admin-category', id).value, mpCost: parseInt(sid('admin-mpcost', id).value) || 0, hpCost: parseInt(sid('admin-hpcost', id).value) || 0,
+    isAoe: sid('admin-isAoe', id).checked, aoeRange: parseInt(sid('admin-aoeRange', id).value) || 0, aoeShape: sid('admin-aoeShape', id).value
+  };
+  const effectId = sid('admin-effect-id', id).value;
+  if (effectId) {
+    const info = PREDEFINED_EFFECTS[effectId];
+    updated.appliesEffect = { ...info, turns: parseInt(sid('admin-effect-turns', id).value) || 0,
+      value: parseFloat(sid('admin-effect-value', id).value) || info.value || 0, speedMod: parseFloat(sid('admin-effect-speedmod', id).value) || 0 };
+  } else delete updated.appliesEffect;
+  if (sid('admin-isResurrect', id).checked) updated.targetType = 'ALLY_DEAD'; else delete updated.targetType;
+  try { await setDoc(doc(db, 'games', gameId), { skills: { ...SKILLS, [id]: updated } }, { merge: true }); toast(`'${updated.name}' 저장`); }
+  catch (e) { console.error(e); toast(errMsg(e)); }
+}
+async function deleteSkill(skillId, skillName) {
+  const batch = writeBatch(db); let any = false;
+  characters.forEach(c => { if (c.skills?.includes(skillId)) { any = true; batch.update(doc(db, 'games', gameId, 'characters', c.id), { skills: c.skills.filter(s => s !== skillId) }); } });
+  if (any) await batch.commit();
+  await updateDoc(doc(db, 'games', gameId), { [`skills.${skillId}`]: deleteField() });
+  await logAction(`🔥 관리자가 **${skillName}** 스킬을 삭제했습니다.`);
+}
+async function addNewSkill() {
+  const newId = $('new-skill-id').value.trim();
+  if (!newId || SKILLS[newId]) return showModal('오류', '유효하지 않거나 중복된 스킬 ID입니다.');
+  if (newId.includes('.')) return showModal('오류', '스킬 ID에는 마침표(.)를 쓸 수 없습니다.');
+  const s = {
+    id: newId, name: $('new-skill-name').value || newId, type: $('new-skill-type').value, icon: $('new-skill-icon').value,
+    range: parseFloat($('new-skill-range').value) || 0, multiplier: parseFloat($('new-skill-multiplier').value) || 0,
+    category: $('new-skill-category').value, mpCost: parseInt($('new-skill-mpcost').value) || 0, hpCost: 0,
+    isAoe: $('new-skill-isAoe').checked, aoeRange: parseInt($('new-skill-aoeRange').value) || 0, aoeShape: $('new-skill-aoeShape').value,
+    rangeShape: $('new-skill-rangeShape').value
+  };
+  const effectId = $('new-skill-effect-id').value;
+  if (effectId) {
+    const info = PREDEFINED_EFFECTS[effectId];
+    s.appliesEffect = { ...info, turns: parseInt($('new-skill-effect-turns').value) || 0, value: parseFloat($('new-skill-effect-value').value) || info.value || 0, speedMod: parseFloat($('new-skill-effect-speedmod').value) || 0 };
+  }
+  if ($('new-skill-isResurrect').checked) s.targetType = 'ALLY_DEAD';
+  await setDoc(doc(db, 'games', gameId), { skills: { ...SKILLS, [newId]: s } }, { merge: true });
+  $('new-skill-id').value = ''; $('new-skill-name').value = '';
+  toast(`'${s.name}' 스킬 추가`);
+}
+
+const L = (t) => `<label class="block text-xs font-medium" style="color:var(--text-2)">${t}</label>`;
+function getSkillEditFormHtml(s) {
+  const id = esc(s.id);
+  const effectOptions = Object.values(PREDEFINED_EFFECTS).map(e => `<option value="${e.id}" ${s.appliesEffect?.id === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+  const shapeSel = (key, val, withCross = true) => `<select id="${key}-${id}" class="form-input mt-1"><option value="square" ${val === 'square' ? 'selected' : ''}>정사각형</option><option value="diamond" ${val === 'diamond' ? 'selected' : ''}>마름모</option>${withCross ? `<option value="cross" ${val === 'cross' ? 'selected' : ''}>십자</option>` : ''}</select>`;
+  return `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+      <div class="col-span-2">${L('스킬 이름')}<input id="admin-name-${id}" class="form-input mt-1" value="${esc(s.name)}"></div>
+      <div>${L('분류')}<input id="admin-category-${id}" class="form-input mt-1" value="${esc(s.category || 'Other')}"></div>
+      <div>${L('아이콘')}<input id="admin-icon-${id}" class="form-input mt-1" value="${esc(s.icon || '')}"></div>
+      <div>${L('사거리 (칸)')}<input id="admin-range-${id}" type="number" class="form-input mt-1" value="${s.range}"></div>
+      <div>${L('범위 모양')}${shapeSel('admin-rangeShape', s.rangeShape)}</div>
+      <div>${L('계수 (×운용력)')}<input id="admin-multiplier-${id}" type="number" step="0.1" class="form-input mt-1" value="${s.multiplier}"></div>
+      <div>${L('정신 비용')}<input id="admin-mpcost-${id}" type="number" class="form-input mt-1" value="${s.mpCost || 0}"></div>
+      <div>${L('신체 비용')}<input id="admin-hpcost-${id}" type="number" class="form-input mt-1" value="${s.hpCost || 0}"></div>
+      <input id="admin-type-${id}" type="hidden" value="${esc(s.type)}">
+    </div>
+    <div class="mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-3 gap-3 items-end text-sm" style="border-color:var(--line)">
+      <label class="flex items-center gap-2"><input id="admin-isAoe-${id}" type="checkbox" class="h-5 w-5" ${s.isAoe ? 'checked' : ''}> 광역 스킬</label>
+      <div>${L('광역 범위')}<input id="admin-aoeRange-${id}" type="number" class="form-input mt-1" value="${s.aoeRange || 0}"></div>
+      <div>${L('광역 형태')}${shapeSel('admin-aoeShape', s.aoeShape)}</div>
+    </div>
+    <div class="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm" style="border-color:var(--line)">
+      <div>${L('상태 이상 효과')}<select id="admin-effect-id-${id}" class="form-input mt-1"><option value="">-- 효과 없음 --</option>${effectOptions}</select></div>
+      <div>${L('지속 턴')}<input id="admin-effect-turns-${id}" type="number" class="form-input mt-1" value="${s.appliesEffect?.turns || 0}"></div>
+      <div title="[약화] 0~1 / [강화] 1 초과 / [지속 피해·회복] 고정 수치">${L('값 (피해/회복/배율) ⓘ')}<input id="admin-effect-value-${id}" type="number" step="0.1" class="form-input mt-1" value="${s.appliesEffect?.value || 0}"></div>
+      <div title="다음 라운드 턴 순서 계산에 반영되는 속도 증감치">${L('속도 보정치 ⓘ')}<input id="admin-effect-speedmod-${id}" type="number" step="0.1" class="form-input mt-1" value="${s.appliesEffect?.speedMod || 0}"></div>
+    </div>
+    <label class="flex items-center gap-2 mt-3 text-sm"><input id="admin-isResurrect-${id}" type="checkbox" class="h-5 w-5" ${s.targetType === 'ALLY_DEAD' ? 'checked' : ''}> 부활 스킬 (사망한 아군을 대상으로 지정)</label>
+    <div class="flex gap-2 mt-4"><button data-skill-id="${id}" class="save-skill-btn flex-1 p-2" style="background:#16a34a">저장</button>
+      <button data-skill-id="${id}" data-skill-name="${esc(s.name)}" class="delete-skill-btn p-2 px-4" style="background:#b91c1c">삭제</button></div>`;
+}
+function getNewSkillFormHtml() {
+  const effectOptions = Object.values(PREDEFINED_EFFECTS).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  return `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+      <div class="col-span-2">${L('스킬 ID (고유값)')}<input id="new-skill-id" class="form-input mt-1"></div>
+      <div class="col-span-2">${L('스킬 이름')}<input id="new-skill-name" class="form-input mt-1"></div>
+      <div>${L('분류')}<select id="new-skill-category" class="form-input mt-1">${SKILL_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('')}</select></div>
+      <div title="Melee/Ranged: 적 대상 공격 · Heal/Support: 아군 대상 · Utility: 이동 등">${L('타입 ⓘ')}<select id="new-skill-type" class="form-input mt-1"><option>Melee</option><option>Ranged</option><option>Heal</option><option>Support</option><option>Utility</option></select></div>
+      <div>${L('아이콘')}<input id="new-skill-icon" class="form-input mt-1"></div>
+      <div>${L('사거리 (칸)')}<input id="new-skill-range" type="number" class="form-input mt-1"></div>
+      <div>${L('범위 모양')}<select id="new-skill-rangeShape" class="form-input mt-1"><option value="square">정사각형</option><option value="diamond">마름모</option><option value="cross">십자</option></select></div>
+      <div>${L('계수 (×운용력)')}<input id="new-skill-multiplier" type="number" step="0.1" class="form-input mt-1"></div>
+      <div>${L('정신 비용')}<input id="new-skill-mpcost" type="number" class="form-input mt-1" value="0"></div>
+    </div>
+    <div class="mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-3 gap-3 items-end text-sm" style="border-color:var(--line)">
+      <label class="flex items-center gap-2"><input id="new-skill-isAoe" type="checkbox" class="h-5 w-5"> 광역 스킬</label>
+      <div>${L('광역 범위')}<input id="new-skill-aoeRange" type="number" class="form-input mt-1"></div>
+      <div>${L('광역 형태')}<select id="new-skill-aoeShape" class="form-input mt-1"><option value="square">정사각형</option><option value="diamond">마름모</option></select></div>
+    </div>
+    <div class="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm" style="border-color:var(--line)">
+      <div>${L('상태 이상 효과')}<select id="new-skill-effect-id" class="form-input mt-1"><option value="">-- 효과 없음 --</option>${effectOptions}</select></div>
+      <div>${L('지속 턴')}<input id="new-skill-effect-turns" type="number" class="form-input mt-1"></div>
+      <div>${L('값 (피해/회복/배율)')}<input id="new-skill-effect-value" type="number" step="0.1" class="form-input mt-1"></div>
+      <div>${L('속도 보정치')}<input id="new-skill-effect-speedmod" type="number" step="0.1" class="form-input mt-1"></div>
+    </div>
+    <label class="flex items-center gap-2 mt-3 text-sm"><input id="new-skill-isResurrect" type="checkbox" class="h-5 w-5"> 부활 스킬 (사망한 아군을 대상으로 지정)</label>
+    <button id="add-new-skill-btn" class="mt-4 w-full p-2 font-bold" style="background:#2563eb">새 스킬 저장</button>`;
+}
+function getNewCharacterFormHtml() {
+  const num = (id, label, val, step = '') => `<div>${L(label)}<input id="${id}" type="number" ${step ? `step="${step}"` : ''} class="form-input mt-1" value="${val}"></div>`;
+  return `<div class="mb-3 text-sm">${L('공유 캐릭터에서 가져오기 (선택)')}<select id="new-char-shared" class="form-input mt-1"><option value="">-- 직접 입력 --</option></select>
+      <p class="muted mt-1">선택하면 이름·이미지를 가져오고, 레이드 로그인은 그 캐릭터의 비밀번호로 합니다. 레이드 스탯은 아래에서 정하세요.</p></div>
+    <div class="grid grid-cols-2 gap-3 text-sm">
+      <input id="new-char-name" placeholder="이름" class="form-input">
+      <select id="new-char-type" class="form-input"><option value="PC">PC</option><option value="ENEMY">ENEMY</option></select>
+      <input id="new-char-imageUrl" placeholder="이미지 URL" class="form-input col-span-2">
+      ${num('new-char-bodyHp', '신체 내구도', 100)}${num('new-char-mentalHp', '정신 내구도', 80)}
+      ${num('new-char-op', '운용력 (op)', 15)}${num('new-char-defPct', '방어율 %', 10)}
+      ${num('new-char-hitPct', '명중률 %', 80)}${num('new-char-speed', '속도', 5, '0.5')}
+      ${num('new-char-moveRange', '이동력', 3)}${num('new-char-size', '크기 (1x1=1, 2x2=2)', 1)}
+      <div class="col-span-2">${L('포지션 (선택 시 스킬 6개 자동 입력)')}<select id="new-char-position" class="form-input mt-1">${['', ...Object.keys(POSITIONS)].map(p => `<option value="${p}">${p || '-- 없음 --'}</option>`).join('')}</select></div>
+      <input id="new-char-skills" placeholder="스킬 ID (예: 추격,결속)" class="form-input col-span-2">
+      <div class="col-span-2" id="new-char-password-wrap">${L(`PC 비밀번호 (비우면 ${DEFAULT_PC_PASSWORD})`)}<input id="new-char-password" class="form-input mt-1"></div>
+    </div>
+    <button id="add-new-char-btn" class="mt-4 w-full p-2 font-bold" style="background:#2563eb">새 캐릭터 저장</button>`;
+}
+
+// ================= 1:1 전투 관리 =================
+let duelChars = [], wallets = {};
+let raidBuild = DEFAULT_RAID_BUILD;
+async function loadRaidBuild() {
+  const ref = doc(db, 'siteConfig', 'raidBuild');
+  let snap = await getDoc(ref);
+  if (!snap.exists()) { await setDoc(ref, DEFAULT_RAID_BUILD); snap = await getDoc(ref); }
+  raidBuild = snap.data();
+  renderBuildEditor();
+}
+function renderBuildEditor() {
+  const b = raidBuild, num = (id, v, step = 1) => `<input id="${id}" type="number" step="${step}" class="form-input text-center" style="min-width:64px" value="${v}">`;
+  const th = (t) => `<th class="p-2 text-sm font-medium text-left" style="color:var(--text-2)">${t}</th>`;
+  $('build-editor').innerHTML = `<table class="w-full text-sm"><thead><tr>${th('포지션')}${BASE_STATS.map(s => th(s.label + (s.unit ? ` (${s.unit})` : ''))).join('')}</tr></thead><tbody>
+    ${POSITION_ORDER.map(p => `<tr><td class="p-2 font-bold">${p}</td>${BASE_STATS.map(s => `<td class="p-1">${num(`b-${p}-${s.key}`, b.positions[p]?.[s.key] ?? 0)}</td>`).join('')}</tr>`).join('')}
+    <tr><td class="p-2 font-bold">정수 1개당</td><td class="p-1">${num('per-body', b.per.body)}</td><td class="p-1 muted text-center">고정</td>${BUILD_STATS.filter(s => s.key !== 'body').map(s => `<td class="p-1">${num(`per-${s.key}`, b.per[s.key])}</td>`).join('')}</tr>
+    <tr><td class="p-2 font-bold">최대치</td><td class="p-1">${num('max-body', b.max.body)}</td><td class="p-1 muted text-center">-</td>${BUILD_STATS.filter(s => s.key !== 'body').map(s => `<td class="p-1">${num(`max-${s.key}`, b.max[s.key])}</td>`).join('')}</tr>
+  </tbody></table>
+  <div class="flex items-center gap-2 mt-3"><label class="text-sm" style="color:var(--text-2)" for="build-points">분배할 정수</label><input id="build-points" type="number" class="form-input" style="width:90px" value="${b.points}"></div>`;
+}
+$('build-save-btn').onclick = async () => {
+  const v = (id) => Number($(id).value);
+  const next = {
+    points: v('build-points'),
+    per: Object.fromEntries(BUILD_STATS.map(s => [s.key, v(`per-${s.key}`)])),
+    max: Object.fromEntries(BUILD_STATS.map(s => [s.key, v(`max-${s.key}`)])),
+    positions: Object.fromEntries(POSITION_ORDER.map(p => [p, Object.fromEntries(BASE_STATS.map(s => [s.key, v(`b-${p}-${s.key}`)]))])),
+    skills: DEFAULT_RAID_BUILD.skills,
+  };
+  const bad = [next.points, ...Object.values(next.per), ...Object.values(next.max), ...Object.values(next.positions).flatMap(o => Object.values(o))].some(x => !Number.isFinite(x) || x < 0);
+  if (bad) return showModal('오류', '모든 값은 0 이상의 숫자여야 합니다.');
+  try {
+    await setDoc(doc(db, 'siteConfig', 'raidBuild'), next);
+    raidBuild = next;
+    const broken = duelChars.filter(c => c.raid && !validateRaid(next, c.raid)).map(c => c.name);
+    showModal('저장 완료', broken.length ? `새 규칙에 맞지 않는 레이드 설정: ${esc(broken.join(', '))}<br>해당 플레이어는 캐릭터 페이지에서 다시 저장해야 레이드에 참가할 수 있습니다.` : '성장 규칙을 저장했습니다.');
+  } catch (e) { console.error(e); toast(errMsg(e)); }
+};
+function fillSharedSelect() {
+  const sel = $('new-char-shared'); if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">-- 직접 입력 --</option>` + duelChars.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  sel.value = duelChars.some(c => c.id === cur) ? cur : '';
+}
+function listenDuelAdmin() {
+  onSnapshot(collection(db, 'wallets'), snap => {
+    wallets = {}; snap.docs.forEach(d => { wallets[d.id] = d.data(); });
+    renderDuelChars();
+  });
+  onSnapshot(query(collection(db, 'duelCharacters'), orderBy('name')), snap => {
+    duelChars = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    fillSharedSelect();
+    renderDuelChars();
+  }, e => { $('duel-char-list').innerHTML = `<p class="muted">${errMsg(e)}</p>`; });
+  listenDuelRooms();
+}
+function renderDuelChars() {
+  {
+    const el = $('duel-char-list');
+    if (!duelChars.length) { el.innerHTML = `<p class="muted">캐릭터가 없습니다.</p>`; return; }
+    el.innerHTML = duelChars.map(c => `<div class="item">
+      <div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(c.name)}</div>
+        <div class="text-xs muted">${c.raid ? `레이드 ${esc(c.raid.position)} · ` : ''}체력 ${maxHpOf(c)} · 투력 ${c.power} · 저력 ${c.guard} (합계 ${statTotal(c)})${wallets[c.id] ? ` · <span style="color:#FACC15">$${wallets[c.id].balance}</span> · 섬전 점수 ${wallets[c.id].totalScore}` : ''}</div></div>
+      <button data-dedit="${c.id}" class="text-xs px-3 py-1" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)">수정</button>
+      ${wallets[c.id] ? `<button data-money="${c.id}" class="text-xs px-3 py-1" style="background:#854d0e">달러</button>` : ''}
+      <button data-dpw="${c.id}" class="text-xs px-3 py-1" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)">비밀번호</button>
+      <button data-ddel="${c.id}" class="text-xs px-3 py-1" style="background:#7f1d1d">삭제</button></div>`).join('');
+    el.querySelectorAll('[data-dedit]').forEach(b => b.onclick = () => editDuelChar(b.dataset.dedit));
+    el.querySelectorAll('[data-dpw]').forEach(b => b.onclick = () => {
+      const c = duelChars.find(x => x.id === b.dataset.dpw);
+      showModal(`${c.name} 비밀번호 재설정`, `<p class="mb-2 text-sm">새 비밀번호를 정하면 기존 기기들은 다시 불러와야 합니다.</p><input id="dpw" class="form-input">`, [
+        { text: '취소' },
+        { text: '저장', bg: '#16a34a', onClick: async () => {
+          const v = $('dpw').value; if (!v) return modalError('비밀번호를 입력하세요.');
+          await setDoc(doc(db, 'duelCharSecrets', c.id), { password: v }); toast('재설정했습니다.');
+        } }]);
+    });
+    el.querySelectorAll('[data-money]').forEach(b => b.onclick = () => {
+      const c = duelChars.find(x => x.id === b.dataset.money);
+      showModal(`${c.name} 달러 조정`, `<p class="mb-2 text-sm">보유 달러를 직접 정합니다. 섬전 점수와 횟수는 바뀌지 않습니다.</p><input id="money-input" type="number" min="0" step="1" class="form-input" value="${wallets[c.id].balance}">`, [
+        { text: '취소' },
+        { text: '저장', bg: '#16a34a', onClick: async () => {
+          const v = parseInt($('money-input').value, 10);
+          if (!Number.isInteger(v) || v < 0) return modalError('0 이상의 정수를 입력하세요.');
+          await updateDoc(doc(db, 'wallets', c.id), { balance: v }); toast('저장했습니다.');
+        } }]);
+    });
+    el.querySelectorAll('[data-ddel]').forEach(b => b.onclick = () => {
+      const c = duelChars.find(x => x.id === b.dataset.ddel);
+      confirmDanger('캐릭터 삭제', `${tag(c.name)}을(를) 삭제할까요? 지갑과 섬전 기록도 함께 삭제됩니다. 진행된 전투 기록과 레이드에 추가된 캐릭터는 남습니다.`, async () => {
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'duelCharacters', c.id)); batch.delete(doc(db, 'duelCharSecrets', c.id));
+        if (wallets[c.id]) batch.delete(doc(db, 'wallets', c.id));
+        await batch.commit();
+      }, '삭제');
+    });
+  }
+}
+function listenDuelRooms() {
+  onSnapshot(query(collection(db, 'duels'), orderBy('createdAt', 'desc'), limit(50)), snap => {
+    const el = $('duel-room-list');
+    if (snap.empty) { el.innerHTML = `<p class="muted">전투방이 없습니다.</p>`; return; }
+    const LBL = { WAITING: '대기 중', ACTIVE: '전투 중', ENDED: '종료' };
+    el.innerHTML = snap.docs.map(d => { const x = d.data(); return `<div class="item">
+      <div class="flex-1 min-w-0"><div class="font-bold truncate">${esc(x.p1?.name || '빈 자리')} <span class="muted">vs</span> ${esc(x.p2?.name || '빈 자리')}</div>
+        <div class="text-xs muted font-mono">${d.id}</div></div>
+      <span class="badge ${x.status.toLowerCase()}">${LBL[x.status]}${x.status === 'ACTIVE' ? ` · ${x.round}R` : ''}</span>
+      <a href="duel.html#room/${d.id}" target="_blank" rel="noopener" class="text-xs px-3 py-1 rounded-md" style="background:var(--nav-btn);color:var(--text);border:1px solid var(--line)">보기</a>
+      ${x.status !== 'ENDED' ? `<button data-end="${d.id}" class="text-xs px-3 py-1" style="background:#a16207">종료</button>` : ''}
+      <button data-rdel="${d.id}" class="text-xs px-3 py-1" style="background:#7f1d1d">삭제</button></div>`; }).join('');
+    el.querySelectorAll('[data-end]').forEach(b => b.onclick = () => confirmDanger('전투 강제 종료', '이 전투를 무효로 종료할까요?', async () => {
+      const id = b.dataset.end;
+      await updateDoc(doc(db, 'duels', id), { status: 'ENDED', winner: null, phase: null, firstAction: null, endReason: '관리자가 전투를 종료했습니다.', updatedAt: serverTimestamp() });
+      await addDoc(collection(db, 'duels', id, 'logs'), { text: '관리자가 전투를 종료했습니다.', kind: 'system', at: serverTimestamp(), seq: Date.now() * 100 });
+    }, '종료'));
+    el.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => confirmDanger('전투방 삭제', '전투방과 기록을 모두 삭제할까요?', async () => {
+      await deleteCollection(['duels', b.dataset.rdel, 'logs']);
+      await deleteDoc(doc(db, 'duels', b.dataset.rdel));
+    }, '삭제'));
+  }, e => { $('duel-room-list').innerHTML = `<p class="muted">${errMsg(e)}</p>`; });
+}
+
+function editDuelChar(id) {
+  const c = duelChars.find(x => x.id === id);
+  const st = { hpInvest: c.hpInvest, power: c.power, guard: c.guard };
+  const NAMES = { hpInvest: '체력 투자', power: '투력', guard: '저력' };
+  const body = () => `<label class="block text-sm mb-1">이름</label><input id="de-name" class="form-input mb-3" maxlength="30" value="${esc($('de-name')?.value ?? c.name)}">
+    <label class="block text-sm mb-1">이미지 URL</label><input id="de-img" class="form-input mb-3" value="${esc($('de-img')?.value ?? c.imageUrl ?? '')}">
+    ${Object.keys(STAT_LIMITS).map(k => `<div class="flex justify-between items-center py-2 border-b" style="border-color:#2a2a2a">
+      <span>${NAMES[k]}${k === 'hpInvest' ? ` <span class="muted">(최대 체력 ${BASE_HP + st[k]})</span>` : ''}</span>
+      <span class="stepper flex items-center gap-2"><button data-k="${k}" data-d="-1" ${st[k] <= STAT_LIMITS[k].min ? 'disabled' : ''}>−</button><b class="w-6 text-center">${st[k]}</b><button data-k="${k}" data-d="1" ${st[k] >= STAT_LIMITS[k].max ? 'disabled' : ''}>+</button></span></div>`).join('')}
+    <p class="mt-3 font-bold" style="color:${validateStats(st) ? 'var(--accent)' : 'var(--danger)'}">투자 합계 ${statTotal(st)} (${TOTAL_MIN}~${TOTAL_MAX})</p>`;
+  const rebind = () => {
+    $('modal-body').innerHTML = body();
+    $('modal-body').querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+      const name = $('de-name').value, img = $('de-img').value;
+      st[b.dataset.k] += Number(b.dataset.d); rebind(); $('de-name').value = name; $('de-img').value = img;
+    });
+  };
+  showModal(`${c.name} 수정`, '', [
+    { text: '취소' },
+    { text: '저장', bg: '#16a34a', onClick: async () => {
+      const name = $('de-name').value.trim(), imageUrl = $('de-img').value.trim();
+      if (!name) return modalError('이름을 입력하세요.');
+      if (!validateStats(st)) return modalError(`투자 합계는 ${TOTAL_MIN}~${TOTAL_MAX}이어야 합니다.`);
+      // 성장 규칙이 바뀌어 맞지 않게 된 레이드 설정은 함께 지웁니다 (보안 규칙이 저장을 거부하므로)
+      const raidFix = c.raid && !validateRaid(raidBuild, c.raid) ? { raid: deleteField() } : {};
+      await updateDoc(doc(db, 'duelCharacters', id), { name, imageUrl, ...st, ...raidFix, updatedAt: serverTimestamp() });
+      toast('저장했습니다.');
+    } }]);
+  rebind();
+}
+
+$('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+</script>
+</body>
+</html>
