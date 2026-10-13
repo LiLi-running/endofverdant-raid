@@ -316,8 +316,9 @@ service cloud.firestore {
         && a.extraSpins == effExtra(b) && a.dayScore == effDayScore(b)
         && a.balance == b.balance - p.bet && totalsSame(b, a);
     }
+    // 서버 시각의 밀리초 자리로 결과를 정합니다 (seomjeon-rules.js 의 rollFromTimestamp 와 같은 계산)
     function rollOf(p) {
-      return math.floor(p.at.nanos() / 1000) % 100;
+      return math.floor(p.at.nanos() / 1000000) % 100;
     }
     function outcomeKey(r) {
       return r < 5 ? 'jackpot' : (r < 35 ? 'success' : (r < 75 ? 'even' : (r < 95 ? 'fail' : 'disaster')));

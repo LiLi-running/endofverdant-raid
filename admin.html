@@ -78,6 +78,11 @@
       <div id="build-editor" class="overflow-x-auto"><p class="muted">불러오는 중...</p></div>
     </div>
     <div class="panel md:col-span-2">
+      <h2 class="sec-title">오늘의 섬전 초기화</h2>
+      <p class="muted mb-3">모든 캐릭터의 지갑을 처음 상태로 되돌립니다: 달러 $10, 섬전 점수·결과 횟수 0, 오늘 출석·섬전 횟수 초기화. 진행 중인 섬전도 취소됩니다. 되돌릴 수 없습니다.</p>
+      <button id="wallet-reset-btn" class="px-4 py-2 font-bold" style="background:#7f1d1d">전체 지갑 초기화</button>
+    </div>
+    <div class="panel md:col-span-2">
       <h2 class="sec-title">비밀번호 보관 상태</h2>
       <p class="muted mb-3">모든 비밀번호는 해시로만 저장되어 관리자도 원래 비밀번호를 볼 수 없습니다. 관리자 페이지를 열 때마다 예전 방식(원문)으로 남은 비밀번호를 자동으로 해시로 바꿉니다.</p>
       <div id="legacy-claims"><p class="muted">확인 중...</p></div>
@@ -113,6 +118,7 @@ import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAI
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, tag } from "./duel-rules.js";
 import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, finalValue, validateRaid, raidCharacterDoc } from "./raid-build.js";
 import { charPasswordHash, pcPasswordHash } from "./password-hash.js";
+import { newWallet } from "./seomjeon-rules.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -815,6 +821,18 @@ function renderBuildEditor() {
   </tbody></table>
   <div class="flex items-center gap-2 mt-3"><label class="text-sm" style="color:var(--text-2)" for="build-points">분배할 정수</label><input id="build-points" type="number" class="form-input" style="width:90px" value="${b.points}"></div>`;
 }
+$('wallet-reset-btn').onclick = () => {
+  const n = Object.keys(wallets).length;
+  confirmDanger('전체 지갑 초기화', `지갑 ${n}개를 모두 $10, 점수 0으로 되돌립니다. 되돌릴 수 없습니다.`, async () => {
+    const ids = Object.keys(wallets);
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = writeBatch(db);
+      ids.slice(i, i + 400).forEach(id => batch.set(doc(db, 'wallets', id), newWallet(serverTimestamp())));
+      await batch.commit();
+    }
+    toast(`지갑 ${ids.length}개를 초기화했습니다.`);
+  }, '초기화');
+};
 $('build-save-btn').onclick = async () => {
   const v = (id) => Number($(id).value);
   const next = {
