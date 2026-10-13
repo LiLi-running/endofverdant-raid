@@ -157,6 +157,15 @@
             position: relative;
             transition: background-color 0.2s;
         }
+        /* 좌표 표시: 가로 A~J (맨 윗줄), 세로 1~10 (맨 왼쪽 줄) */
+        .cell[data-col]::before, .cell[data-row]::after {
+            position: absolute; z-index: 25; pointer-events: none;
+            font: 700 10px/1 'Pretendard', 'Noto Sans KR', sans-serif; letter-spacing: 0;
+            color: var(--text-secondary); opacity: .75;
+            text-shadow: 0 0 3px var(--bg-primary), 0 0 2px var(--bg-primary);
+        }
+        .cell[data-col]::before { content: attr(data-col); top: 3px; left: 50%; transform: translateX(-50%); }
+        .cell[data-row]::after { content: attr(data-row); left: 3px; top: 50%; transform: translateY(-50%); }
 
         .cell:hover {
             background-color: rgba(212, 183, 131, 0.1);
@@ -1114,7 +1123,7 @@
                 <button id="create-game-btn" class="w-full bg-green-600 text-black font-bold py-3 px-4 transition-transform hover:scale-105">새 게임 만들기</button>
                 <div class="flex items-center"><hr class="flex-grow border-gray-600"><span class="px-4 text-gray-400">또는</span><hr class="flex-grow border-gray-600"></div>
                 <div class="flex gap-2">
-                    <input type="text" id="game-id-input" placeholder="게임 코드 입력" class="form-input flex-grow">
+                    <input type="text" id="game-id-input" placeholder="게임 코드 입력" class="form-input flex-grow" autocomplete="off" autocapitalize="characters" spellcheck="false">
                     <button id="join-game-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 whitespace-nowrap shrink-0">참가하기</button>
                 </div>
             </div>
@@ -1222,7 +1231,7 @@
 
      
     <div id="profile-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-50 hidden"><div id="modal-content" class="w-full max-w-[900px]"></div></div>
-    <div id="custom-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-50 hidden"><div id="custom-modal-content" class="modal-content rounded-md shadow-2xl p-8 w-full max-w-sm"><h3 id="custom-modal-title" class="text-xl font-bold mb-4 font-title"></h3><p id="custom-modal-message" class="mb-6"></p><div id="custom-modal-buttons" class="flex justify-end gap-4"></div></div></div>
+    <div id="custom-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[120] hidden"><div id="custom-modal-content" class="modal-content rounded-md shadow-2xl p-8 w-full max-w-sm"><h3 id="custom-modal-title" class="text-xl font-bold mb-4 font-title"></h3><p id="custom-modal-message" class="mb-6"></p><div id="custom-modal-buttons" class="flex justify-end gap-4"></div></div></div>
     <div id="admin-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[60] hidden"><div id="admin-modal-content" class="modal-content rounded-md shadow-2xl p-8 w-full max-w-3xl max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-bold font-title" style="color: var(--accent-primary);">관리자 패널</h3><button id="close-admin-modal-btn" class="hover:text-white text-3xl leading-none">&times;</button></div><div id="admin-skill-list" class="space-y-4"></div></div></div>
     <div id="admin-password-modal" class="modal-backdrop fixed inset-0 flex items-center justify-center p-4 z-[110] hidden">
         <div class="modal-content rounded-md shadow-2xl p-8 w-full max-w-sm">
@@ -1505,13 +1514,37 @@ const loginStatusModal = document.getElementById('login-status-modal');
         }
         await joinGame(generateGameId(), true);
     }
-    async function joinGame(id, isNewGame = false) {
-    if (!id || id.trim().length === 0) { showCustomModal("오류", "유효한 게임 코드를 입력해주세요.", [{ text: "확인", class: "bg-red-600" }]); return; }
-    gameId = id.trim().toUpperCase();
+    // 붙여넣기로 섞인 공백·보이지 않는 문자, 전각 문자(한글 입력기), 소문자를 정리합니다.
+    function normalizeGameCode(raw) {
+        return String(raw || '').normalize('NFKC').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    }
+    // fromSaved: 이 브라우저에 저장된 마지막 게임 코드로 자동 입장하는 경우 (실패해도 팝업 없이 로비로)
+    async function joinGame(id, isNewGame = false, fromSaved = false) {
+    const code = normalizeGameCode(id);
+    if (!code) { showCustomModal("오류", "유효한 게임 코드를 입력해주세요.", [{ text: "확인", class: "bg-red-600" }]); return; }
+    gameId = code;
 
     if (!isNewGame) {
-        const docSnap = await getDoc(doc(db, "games", gameId));
-        if (!docSnap.exists()) { showCustomModal("참가 실패", "존재하지 않는 게임 코드입니다.", [{ text: "확인", class: "bg-red-600" }]); gameId = null; return; }
+        let docSnap;
+        try {
+            docSnap = await getDoc(doc(db, "games", gameId));
+        } catch (e) {
+            console.error('게임 확인 실패:', e);
+            gameId = null;
+            if (!fromSaved) showCustomModal("연결 실패", "게임 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", [{ text: "확인", class: "bg-red-600" }]);
+            return;
+        }
+        if (!docSnap.exists()) {
+            gameId = null;
+            if (fromSaved) {
+                // 삭제된 게임이 저장돼 있으면 지우고 로비를 보여 줍니다.
+                localStorage.removeItem('currentGameId');
+                lobbyModal.classList.remove('hidden');
+            } else {
+                showCustomModal("참가 실패", `게임 코드 '${code}'를 찾을 수 없습니다. 코드를 다시 확인해 주세요.`, [{ text: "확인", class: "bg-red-600" }]);
+            }
+            return;
+        }
     }
 
     localStorage.setItem('currentGameId', gameId);
@@ -1543,7 +1576,7 @@ const loginStatusModal = document.getElementById('login-status-modal');
             // raid.html?game=코드 로 들어오면 그 게임으로 바로 입장합니다.
             const urlGameId = new URLSearchParams(location.search).get('game');
             const savedGameId = urlGameId || localStorage.getItem('currentGameId');
-            if (savedGameId) { joinGame(savedGameId); } 
+            if (savedGameId) { joinGame(savedGameId, false, !urlGameId); } 
             else { lobbyModal.classList.remove('hidden'); }
         } else { signInAnonymously(auth).catch((error) => console.error("Anonymous sign-in failed:", error)); }
     });
@@ -3071,7 +3104,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
                 await updateBodyHP(t, -dmg4, "damage");
                 if (Math.random() < 0.5) await applyStatusEffect(t, { id: 'stunned', turns: 1 }, attacker.id);
             }
-            await logAction(`👹 [Ördög rosszindulata] ${attacker.name}: (${bestCenter.x},${bestCenter.y}) 중심 3x3 범위에 ${dmg4} 피해! (50% 확률 기절)`, "damage");
+            await logAction(`👹 [Ördög rosszindulata] ${attacker.name}: ${coordLabel(bestCenter.x, bestCenter.y)} 중심 3x3 범위에 ${dmg4} 피해! (50% 확률 기절)`, "damage");
             const ge5 = await checkGameEndCondition();
             return { success: true, bonus: bonusEarned, gameEnded: ge5 };
         }
@@ -3473,6 +3506,13 @@ async function handleLogout() {
     
     // --- End PC Login Handlers ---
 
+    // 좌표 표기: 가로 A~J, 세로 1~10 (예: 0,0 → A1 / 2,3 → C4). 저장 값은 그대로 0부터 시작하는 숫자입니다.
+    const coordCol = (x) => String.fromCharCode(65 + Number(x));
+    const coordRow = (y) => Number(y) + 1;
+    const coordLabel = (x, y) => `${coordCol(x)}${coordRow(y)}`;
+    // 조사 '로/으로': 숫자를 읽었을 때 받침이 ㄹ이 아닌 받침으로 끝나면(3 삼, 6 육, 10 십) '으로'
+    const coordTo = (x, y) => coordLabel(x, y) + ([3, 6, 10].includes(coordRow(y)) ? '으로' : '로');
+
     function initializeBoard() {
         if (isBoardInitialized) return;
         gameBoard.innerHTML = '';
@@ -3482,6 +3522,9 @@ async function handleLogout() {
                 cell.className = 'cell';
                 cell.dataset.x = x;
                 cell.dataset.y = y;
+                if (y === 0) cell.dataset.col = coordCol(x);
+                if (x === 0) cell.dataset.row = coordRow(y);
+                cell.title = coordLabel(x, y);
                 gameBoard.appendChild(cell);
             }
         }
@@ -3588,7 +3631,7 @@ async function handleLogout() {
             infoContainer.innerHTML = `
                 <div class="font-bold">${char.name} <span class="text-red-400 text-sm">${isDead ? '(사망)' : ''}</span></div>
                 <div class="flex justify-between items-center text-sm">
-                    <span class="text-white/80">${isPlaced ? `(${char.x}, ${char.y})` : '미배치 (드래그)'}</span>
+                    <span class="text-white/80">${isPlaced ? coordLabel(char.x, char.y) : '미배치 (드래그)'}</span>
                     <button class="details-btn">상세</button>
                 </div>`;
             
@@ -4606,7 +4649,7 @@ async function resetAllCharacterStats() {
         }
         
         await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: newTiles });
-        await logAction(`🗺️ 관리자가 (${x}, ${y}) 칸을 ${type === 'obstacle' ? '장애물(🚫)' : (type === 'damage' ? '대미지 칸(🩸)' : '일반 칸')}으로 설정했습니다.`, "admin");
+        await logAction(`🗺️ 관리자가 ${coordLabel(x, y)} 칸을 ${type === 'obstacle' ? '장애물(🚫)' : (type === 'damage' ? '대미지 칸(🩸)' : '일반 칸')}으로 설정했습니다.`, "admin");
     }
     
     // NEW: Save Background Image
@@ -4837,7 +4880,6 @@ loginStatusModal.addEventListener('click', (e) => {
     }
 });
 
-createGameBtn.addEventListener('click', createGame);
         btn.onclick = (e) => {
             currentTileType = e.currentTarget.dataset.tileType;
             document.getElementById('map-edit-status').textContent = `현재 선택: ${e.currentTarget.textContent.trim()}`;
@@ -4858,7 +4900,7 @@ createGameBtn.addEventListener('click', createGame);
 
     createGameBtn.addEventListener('click', createGame);
     joinGameBtn.addEventListener('click', () => joinGame(gameIdInput.value));
-    gameIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinGame(gameIdInput.value); });
+    gameIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) joinGame(gameIdInput.value); });
     leaveGameBtn.addEventListener('click', leaveGame);
     
     // User Info Modal Handlers
@@ -4980,11 +5022,11 @@ createGameBtn.addEventListener('click', createGame);
             await updateDoc(doc(db, 'games', gameId, 'characters', charId), { x: newX, y: newY });
             
             if (oldX === null) {
-               await logAction(`✅ ${targetChar.name}이(가) 전장에 합류했습니다.`, "join");
+               await logAction(`✅ ${targetChar.name}이(가) ${coordLabel(newX, newY)}에서 전장에 합류했습니다.`, "join");
             } else if (isAdmin && isAdminMoveAllowed) {
-               await logAction(`👮 관리자가 ${targetChar.name}을(를) (${oldX},${targetChar.y})에서 (${newX}, ${newY})로 이동했습니다.`, "admin-move");
+               await logAction(`👮 관리자가 ${targetChar.name}을(를) ${coordLabel(oldX, targetChar.y)}에서 ${coordTo(newX, newY)} 이동했습니다.`, "admin-move");
             } else {
-                await logAction(`🏃 ${targetChar.name}이(가) (${oldX},${targetChar.y})에서 (${newX}, ${newY})로 이동했습니다.`, "move");
+                await logAction(`🏃 ${targetChar.name}이(가) ${coordLabel(oldX, targetChar.y)}에서 ${coordTo(newX, newY)} 이동했습니다.`, "move");
             }
         } else {
              showCustomModal("배치 오류", "해당 위치는 이미 다른 캐릭터가 차지하고 있거나 장애물입니다.", [{ text: "확인", class: "bg-red-600" }]);
