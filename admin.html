@@ -114,7 +114,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
          addDoc, writeBatch, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES } from "./raid-data.js";
+import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES, PLAYER_SKILLS_VERSION, POSITION_SKILL_IDS } from "./raid-data.js?v=2";
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, maxHpOf, tag } from "./duel-rules.js";
 import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, finalValue, validateRaid, raidCharacterDoc } from "./raid-build.js";
 import { charPasswordHash, pcPasswordHash } from "./password-hash.js";
@@ -237,7 +237,7 @@ $('raid-create-btn').onclick = async () => {
   try {
     let id; do { id = generateGameId(); } while ((await getDoc(doc(db, 'games', id))).exists());
     await setDoc(doc(db, 'games', id), {
-      skills: DEFAULT_SKILLS, currentTurnCharId: null, turnQueue: [], activeExtraUsed: false,
+      skills: DEFAULT_SKILLS, skillsVersion: PLAYER_SKILLS_VERSION, currentTurnCharId: null, turnQueue: [], activeExtraUsed: false,
       gameState: 'PREPARATION', round: 1, maxRounds: 0, isAdminMoveAllowed: true,
       boardBackgroundImage: '', pageBackgroundImage: '', createdAt: serverTimestamp()
     });
@@ -281,7 +281,7 @@ function selectRaidGame(id) {
     const first = !game;
     game = snap.data();
     SKILLS = game.skills || {};
-    if (first) { renderRaidPanel(); migrateLegacy(); }
+    if (first) { renderRaidPanel(); migrateLegacy(); upgradePositionSkills(); }
     else { renderRaidStatus(); renderSkills(); }
   }, e => { $('raid-panel').innerHTML = `<div class="panel"><p class="muted">${errMsg(e)}</p></div>`; }));
   unsubs.push(onSnapshot(collection(db, 'games', id, 'characters'), snap => {
@@ -310,6 +310,17 @@ async function migrateGameSecrets(id, gameData) {
   const logins = await getDocs(collection(db, 'games', id, 'pcLogins'));
   for (const d of logins.docs.filter(d => 'password' in d.data())) { await deleteDoc(d.ref); n++; }
   return n;
+}
+// 포지션 스킬을 최신 스킬 문서 기준으로 갱신 (다른 스킬은 그대로)
+async function upgradePositionSkills() {
+  if (!game || (game.skillsVersion || 1) >= PLAYER_SKILLS_VERSION) return;
+  try {
+    const merged = { ...(game.skills || {}) };
+    ['move', ...POSITION_SKILL_IDS].forEach(id => { merged[id] = DEFAULT_SKILLS[id]; });
+    await setDoc(doc(db, 'games', gameId), { skills: merged, skillsVersion: PLAYER_SKILLS_VERSION }, { merge: true });
+    await logAction(`🛠️ 포지션 스킬이 최신 스킬 문서 기준(v${PLAYER_SKILLS_VERSION})으로 갱신되었습니다.`);
+    toast('포지션 스킬을 최신 기준으로 갱신했습니다.');
+  } catch (e) { console.error('스킬 갱신 실패', e); }
 }
 async function migrateLegacy() {
   try { await migrateGameSecrets(gameId, game); } catch (e) { console.error('비밀번호 전환 실패', e); }
@@ -398,7 +409,7 @@ function renderRaidPanel() {
 
     ${section('새 캐릭터/에너미 추가', getNewCharacterFormHtml(), '#4ADE80', false)}
     ${section('저장된 캐릭터 프리셋', `<p class="muted mb-3">레이드 화면의 캐릭터 수정 창에서 프리셋으로 저장한 PC를 이 게임에 추가합니다.</p><div id="character-preset-list"><p class="muted">불러오는 중...</p></div>`, '#4ADE80', false)}
-    ${section('스킬 목록/편집', `<div id="admin-skill-list"></div>`, '#4ADE80', false)}
+    ${section('스킬 목록/편집', `<p class="muted mb-3">포지션 스킬 24종은 게임을 열 때 최신 스킬 문서 기준으로 자동 갱신됩니다. 직접 고친 값을 기준값으로 되돌리려면 아래 버튼을 누르세요.</p><button id="reset-pos-skills-btn" class="px-3 py-1.5 text-sm mb-3" style="background:#a16207">포지션 스킬 기준값으로 되돌리기</button><div id="admin-skill-list"></div>`, '#4ADE80', false)}
     ${section('새 스킬 추가', getNewSkillFormHtml(), '#4ADE80', false)}
   </div>`;
   renderRaidStatus();
@@ -485,7 +496,8 @@ function bindRaidPanel() {
     characters.forEach(c => batch.update(doc(db, 'games', gameId, 'characters', c.id), {
       bodyHp: c.maxBodyHp ?? c.maxHp ?? 100, mentalHp: c.maxMentalHp ?? c.maxMp ?? 50,
       hp: c.maxBodyHp ?? c.maxHp ?? 100, mp: c.maxMentalHp ?? c.maxMp ?? 50,
-      x: null, y: null, statusEffects: [], hasActedThisRound: false, isLastFallen: false, totalDamage: 0
+      x: null, y: null, statusEffects: [], hasActedThisRound: false, isLastFallen: false, totalDamage: 0,
+      onceUsedSkillIds: [], lastSkillId: deleteField(), madnessCheckedRound: deleteField(), damageTakenThisRound: 0, bodyDamageThisRound: 0
     }));
     await batch.commit();
     await setDoc(doc(db, 'games', gameId, 'board', 'tiles'), { tiles: {} });
@@ -584,6 +596,12 @@ function bindRaidPanel() {
     toast(`'${name}' 추가`);
   };
   $('add-new-skill-btn').onclick = addNewSkill;
+  $('reset-pos-skills-btn').onclick = () => confirmDanger('포지션 스킬 되돌리기', '이 게임의 포지션 스킬 24종과 이동을 스킬 문서 기준값으로 되돌립니다.', async () => {
+    const merged = { ...SKILLS };
+    ['move', ...POSITION_SKILL_IDS].forEach(id => { merged[id] = DEFAULT_SKILLS[id]; });
+    await setDoc(doc(db, 'games', gameId), { skills: merged, skillsVersion: PLAYER_SKILLS_VERSION }, { merge: true });
+    toast('되돌렸습니다.');
+  }, '되돌리기');
 }
 
 // ---- 프리셋 ----

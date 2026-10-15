@@ -210,6 +210,14 @@
             box-shadow: inset 0 0 12px var(--log-heal);
         }
 
+        /* 포지션 스킬: 실제로 고를 수 있는 칸 */
+        .cell.skill-target { outline: 3px solid var(--accent-primary) !important; outline-offset: -3px; cursor: pointer; }
+        .cell.attack-range-skill.skill-target { outline-color: var(--log-damage) !important; background-color: rgba(239, 68, 68, 0.18); }
+        .cell.heal-range-skill.skill-target { background-color: rgba(74, 222, 128, 0.2); }
+        /* 이동: 지금 자리도 고를 수 있음 */
+        .cell.move-origin::after { content: '제자리'; position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); z-index: 26;
+            font: 700 9px/1 'Pretendard', sans-serif; padding: 2px 4px; border-radius: 4px; pointer-events: none; white-space: nowrap;
+            background: var(--accent-primary); color: var(--bg-primary); }
         .enemy-threat-range {
             background-color: rgba(200, 50, 50, 0.07);
         }
@@ -1273,10 +1281,10 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES } from "./raid-data.js";
+    import { DEFAULT_PC_PASSWORD, PREDEFINED_EFFECTS, DEFAULT_SKILLS, POSITIONS, RAID_ENEMY_CATALOG, SKILL_CATEGORIES, PLAYER_SKILLS_VERSION, POSITION_SKILL_IDS } from "./raid-data.js?v=2";
     import { DEFAULT_RAID_BUILD, pointsUsed, raidCharacterDoc, validateRaid } from "./raid-build.js";
     import { charPasswordHash, pcPasswordHash } from "./password-hash.js";
-    import { getFirestore, collection, onSnapshot, doc, updateDoc, query, getDocs, writeBatch, getDoc, setDoc, addDoc, serverTimestamp, orderBy, deleteDoc, deleteField, limit, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFirestore, collection, onSnapshot, doc, updateDoc, query, getDocs, writeBatch, getDoc, setDoc, addDoc, serverTimestamp, orderBy, deleteDoc, deleteField, limit, where, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // Firebase 설정은 firebase-config.js 에서 불러옵니다 (공개되어도 되는 값이며, 보안은 firestore.rules 가 담당합니다)
     const firebaseConfig = window.FIREBASE_CONFIG;
@@ -1440,6 +1448,10 @@ const combatTextStartTime = new Date();
     guarding: '🪵',
     mentalRot: '🩸',
     confused: '😵',
+    barkArmor: '🪵',
+    hitSet: '🔆',
+    exhausted: '😮‍💨',
+    guardian: '⚔️',
 };
     
     // NEW: Map/Board State Variables
@@ -1585,6 +1597,7 @@ const loginStatusModal = document.getElementById('login-status-modal');
     async function seedInitialSettings(gameId) { 
         await setDoc(doc(db, 'games', gameId), {
             skills: DEFAULT_SKILLS,
+            skillsVersion: PLAYER_SKILLS_VERSION,
             currentTurnCharId: null,
             turnQueue: [],
             activeExtraUsed: false,
@@ -1609,6 +1622,7 @@ const loginStatusModal = document.getElementById('login-status-modal');
             const oldRound = round;
 
             SKILLS = data.skills || {};
+            upgradePositionSkillsIfNeeded(data);
             gameState = data.gameState || 'PREPARATION';
 
             if (oldGameState === 'STARTED' && gameState === 'ENDED' && data.gameResult) {
@@ -1651,6 +1665,12 @@ const loginStatusModal = document.getElementById('login-status-modal');
             if (turnCharId && turnCharId !== previousTurnCharId) {
                 if (isAdmin && currentTurnChar && currentTurnChar.type === 'ENEMY' && currentTurnChar.bodyHp > 0) {
                     setTimeout(() => runEnemyAutoTurn(currentTurnChar), 600);
+                } else if (isAdmin && currentTurnChar && needsMadnessCheck(currentTurnChar) && !getSkipReason(currentTurnChar)) {
+                    // 정신 내구도 0 아군: 차례 시작 시 70% 확률로 아군 공격
+                    setTimeout(() => runMadnessCheck(currentTurnChar), 700);
+                } else if (isAdmin && currentTurnChar && currentTurnChar.type === 'PC' && currentTurnChar.bodyHp > 0 && getSkipReason(currentTurnChar)) {
+                    // [기절]·[행동 불가] 아군의 차례는 자동으로 건너뜁니다
+                    setTimeout(() => skipTurnForStatus(currentTurnChar), 700);
                 } else if (isAdmin && currentTurnChar && currentTurnChar.type === 'PC' && currentTurnChar.bodyHp > 0 && currentTurnChar.statusEffects?.some(e => e.id === 'confused')) {
                     setTimeout(() => runConfusedTurn(currentTurnChar), 600);
                 }
@@ -1737,6 +1757,8 @@ function listenForCombatTextEvents(gameId) {
     // ============ 속도 기반 이니셔티브 턴 시스템 ============
     // 이전 라운드에 부여된 버프/디버프/패널티(상태이상의 speedMod)를 반영한 현재 속도
     function getEffectiveSpeed(char) {
+        const fixed = (char.statusEffects || []).find(e => e.speedFix !== undefined);
+        if (fixed) return fixed.speedFix; // [잠식 반동]: 속도 고정
         const base = char.speed ?? 5;
         const mods = (char.statusEffects || []).reduce((sum, e) => sum + (e.speedMod || 0), 0);
         return base + mods;
@@ -1758,6 +1780,10 @@ function listenForCombatTextEvents(gameId) {
 
     // 대상의 이동 가능 칸을 고려해 원점에서 바깥 방향으로 distance칸 밀어냅니다. 막히면 그 자리에서 멈춥니다.
     async function knockbackCharacter(target, originX, originY, distance) {
+        if (target.statusEffects?.some(e => e.id === 'anchored')) {
+            await logAction(`⚓ ${target.name}은(는) [정착] 상태라 밀려나지 않습니다.`, "system");
+            return { x: target.x, y: target.y, moved: 0 };
+        }
         let dx = target.x - originX;
         let dy = target.y - originY;
         const stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
@@ -1774,6 +1800,7 @@ function listenForCombatTextEvents(gameId) {
         if (moved > 0) {
             await updateDoc(doc(db, 'games', gameId, 'characters', target.id), { x: curX, y: curY });
             target.x = curX; target.y = curY;
+            await breakStealthOnMove(target);
         }
         return { x: curX, y: curY, moved };
     }
@@ -1837,6 +1864,7 @@ function listenForCombatTextEvents(gameId) {
             return;
         }
         const char = characters.find(c => c.id === charId);
+        skillStep = null;
         if (char) char.hasActedThisRound = true; // 스냅샷 도착 전 즉시 반영(경합 방지)
         await updateDoc(doc(db, 'games', gameId, 'characters', charId), { hasActedThisRound: true });
         selectedCharacterId = null;
@@ -1848,21 +1876,6 @@ function listenForCombatTextEvents(gameId) {
     async function startNewRound() {
         if (gameState !== 'STARTED' || !gameId) return;
         currentlyActingEnemyId = null;
-
-        // 전투 불능(신체 내구도 0)이었던 아군은 다음 라운드에 정신 내구도를 [최대 신체 내구도/10]만큼 차감한 채 최대 신체 내구도로 부활합니다. (적은 해당 없음)
-        const incapacitatedPCs = characters.filter(c => c.type === 'PC' && c.bodyHp <= 0 && c.x !== null);
-        if (incapacitatedPCs.length > 0) {
-            const reviveBatch = writeBatch(db);
-            for (const pc of incapacitatedPCs) {
-                const reviveMentalCost = Math.floor(pc.maxBodyHp / 10);
-                const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
-                const updates = { bodyHp: pc.maxBodyHp, hp: pc.maxBodyHp, mentalHp: reviveMental, mp: reviveMental };
-                pc.bodyHp = pc.maxBodyHp; pc.hp = pc.maxBodyHp; pc.mentalHp = reviveMental; pc.mp = reviveMental;
-                reviveBatch.update(doc(db, 'games', gameId, 'characters', pc.id), updates);
-                await logAction(`💚 ${pc.name}이(가) 자동 부활했습니다! (신체 내구도 완전 회복, 정신 내구도 -${reviveMentalCost})`, "heal");
-            }
-            await reviveBatch.commit();
-        }
 
         // [אין] 예약된 소환: 사망한 서브 개체 수만큼 녹빛 파편을 소환합니다 (전체 적 최대 7체).
         const seph = characters.find(c => c.name === '세피로트' && c.type === 'ENEMY' && c.bodyHp > 0 && (c.pendingSummonCount || 0) > 0);
@@ -1958,8 +1971,22 @@ function listenForCombatTextEvents(gameId) {
                 logAction(`🩸 ${char.name}이(가) 대미지 칸에 서있어 **${DAMAGE_TILE_DAMAGE} 피해**를 입었습니다!`, "damage");
             }
 
+            // [정착]: 이번 라운드 피격 데미지의 절반만큼 정신 내구도 회복
+            if ((char.statusEffects || []).some(e => e.id === 'anchored')) {
+                const anchorHeal = Math.floor((char.bodyDamageThisRound || 0) / 2);
+                if (anchorHeal > 0) {
+                    const cap = Math.max(char.maxMentalHp, char.mentalHp);
+                    const newMental = Math.min(cap, char.mentalHp + anchorHeal);
+                    char.mentalHp = newMental; char.mp = newMental;
+                    batch.update(doc(db, 'games', gameId, 'characters', char.id), { mentalHp: newMental, mp: newMental });
+                    logAction(`⚓ [정착] ${char.name}: 이번 라운드 피격 데미지 ${char.bodyDamageThisRound}의 절반, 정신 내구도 ${anchorHeal} 회복!`, "heal");
+                }
+            }
+
             const effects = char.statusEffects || [];
             effects.forEach(effect => {
+                // 지속 효과는 부여된 다음 라운드부터 적용됩니다 (N라운드 지속 = 다음 라운드부터 N번)
+                if (effect.isNew) return;
                 if (effect.effectType === 'heal') {
                     const healAmount = effect.value || 15;
                     finalBodyHp = Math.min(char.maxBodyHp, finalBodyHp + healAmount);
@@ -1980,6 +2007,10 @@ function listenForCombatTextEvents(gameId) {
             });
 
             const updatedEffects = effects.reduce((acc, effect) => {
+                if (effect.thisRoundOnly) {
+                    logAction(`⏱️ ${char.name}의 [${effect.name}] 효과가 사라졌습니다.`, "system");
+                    return acc;
+                }
                 if (effect.isNew) {
                     const { isNew, ...rest } = effect;
                     acc.push(rest);
@@ -1994,7 +2025,8 @@ function listenForCombatTextEvents(gameId) {
                 return acc;
             }, []);
 
-            const updates = { statusEffects: updatedEffects, damageTakenThisRound: 0 };
+            const updates = { statusEffects: updatedEffects, damageTakenThisRound: 0, bodyDamageThisRound: 0 };
+            char.bodyDamageThisRound = 0;
             if (hpChanged) { updates.bodyHp = finalBodyHp; updates.hp = finalBodyHp; }
             char.statusEffects = updatedEffects;
             char.damageTakenThisRound = 0;
@@ -2008,23 +2040,33 @@ function listenForCombatTextEvents(gameId) {
         let isGameOver = await checkGameEndCondition();
         if (isGameOver) return;
 
+        // 쓰러진(신체 0) 아군은 라운드 종료 시 정신 내구도를 [최대 신체 내구도/10]만큼 차감한 채 최대 신체 내구도로 부활합니다.
+        const incapacitatedPCs = characters.filter(c => c.type === 'PC' && c.bodyHp <= 0 && c.x !== null);
+        if (incapacitatedPCs.length > 0) {
+            const reviveBatch = writeBatch(db);
+            for (const pc of incapacitatedPCs) {
+                const reviveMentalCost = Math.floor(pc.maxBodyHp / 10);
+                const reviveMental = Math.max(0, pc.mentalHp - reviveMentalCost);
+                const updates = { bodyHp: pc.maxBodyHp, hp: pc.maxBodyHp, mentalHp: reviveMental, mp: reviveMental };
+                pc.bodyHp = pc.maxBodyHp; pc.hp = pc.maxBodyHp; pc.mentalHp = reviveMental; pc.mp = reviveMental;
+                reviveBatch.update(doc(db, 'games', gameId, 'characters', pc.id), updates);
+                await logAction(`💚 ${pc.name}이(가) 부활했습니다! (신체 내구도 최대 ${pc.maxBodyHp}, 정신 내구도 -${reviveMentalCost} → ${reviveMental})`, "heal");
+            }
+            await reviveBatch.commit();
+        }
+
         // 라운드 종료 기준 패배 조건: 모든 아군의 정신 내구도가 0에 도달한 경우
         const placedPCsAtRoundEnd = characters.filter(c => c.type === 'PC' && c.x !== null);
         if (placedPCsAtRoundEnd.length > 0 && placedPCsAtRoundEnd.every(c => c.mentalHp <= 0)) {
-            await logAction(`- 전투 종료: 모든 아군의 정신 내구도가 0에 도달했습니다 -`, "system");
+            await logAction(`- 공략 실패: 라운드 종료 시점에 모든 아군의 정신 내구도가 0입니다 -`, "system");
             await setDoc(doc(db, 'games', gameId), {
                 gameState: 'ENDED',
-                gameResult: { title: "패배...", message: "모든 아군의 정신 내구도가 0에 도달했습니다." }
+                gameResult: { title: "공략 실패", message: "라운드 종료 시점에 모든 아군의 정신 내구도가 0이 되었습니다." }
             }, { merge: true });
             return;
         }
 
-        // 정신 내구도가 0인 아군은 라운드 종료 시마다 70% 확률로 [혼란](다음 턴에 아군을 공격) 상태가 됩니다.
-        for (const pc of characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && c.mentalHp <= 0)) {
-            if (Math.random() < 0.7) {
-                await applyStatusEffect(pc, { id: 'confused', turns: 1 }, pc.id);
-            }
-        }
+        // 정신 내구도 0인 아군의 아군 공격 판정은 각자 차례가 시작될 때 합니다 (runMadnessCheck)
 
         // [סִטְרָא אַחְרָא] 지정 대상이 이번 라운드에 신체 내구도 0이 되었다면 세피로트에게 라운드 종료 추가행동 권한 부여
         for (const c of characters.filter(c => c.type === 'ENEMY' && c.bodyHp > 0 && c.x !== null && c.sephTargetId)) {
@@ -2083,7 +2125,7 @@ function listenForCombatTextEvents(gameId) {
     function findBestAoeTarget(enemy, skill) {
         const livingTargets = characters.filter(c => c.type !== enemy.type && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         if (livingTargets.length === 0) return null;
-        const moveRange = enemy.moveRange !== undefined ? enemy.moveRange : (SKILLS['move']?.range || 1);
+        const moveRange = getMoveRange(enemy);
 
         let best = null, bestCount = -1, bestDist = Infinity;
         livingTargets.forEach(candidate => {
@@ -2102,7 +2144,8 @@ function listenForCombatTextEvents(gameId) {
         await logAction(`😵 ${pc.name}은(는) [혼란] 상태로 아군을 공격합니다!`, "system");
         await delay(600);
 
-        const attackSkillId = pc.skills.find(id => SKILLS[id]?.category === 'Attack' && id !== 'move');
+        // 혼란 중에는 지정형 공격 스킬(사거리 1 이상, 광역 아님) 중 첫 번째로 아군을 공격합니다
+        const attackSkillId = pc.skills.find(id => SKILLS[id]?.category === 'Attack' && id !== 'move' && !SKILLS[id].isAoe && (SKILLS[id].range || 0) >= 1 && SKILLS[id].multiplier > 0);
         if (!attackSkillId) {
             await logAction(`...${pc.name}은(는) 사용할 공격 스킬이 없어 혼란 행동을 종료합니다.`, "system");
             await completeActorTurn(pc.id, false);
@@ -2117,7 +2160,7 @@ function listenForCombatTextEvents(gameId) {
         }
         const target = allyTargets[Math.floor(Math.random() * allyTargets.length)];
 
-        const moveRange = pc.moveRange !== undefined ? pc.moveRange : (SKILLS['move']?.range || 1);
+        const moveRange = getMoveRange(pc);
         const attackRange = skill.range;
         let bestMovePos = { x: pc.x, y: pc.y };
         if (!isAttackPossible(pc, target, attackRange)) {
@@ -2165,10 +2208,10 @@ function listenForCombatTextEvents(gameId) {
             return false;
         }
 
-        // 가장 가까운 아군을 향해 한 칸씩 접근합니다 (사거리 제약이 있는 스킬을 위한 최소한의 위치 조정).
-        const nearestPc = findNearestEnemyTarget(boss);
+        // 가장 가까운 아군(도발 중이면 도발한 아군)을 향해 접근합니다.
+        const nearestPc = findTauntTarget(boss) || findNearestEnemyTarget(boss);
         if (nearestPc && getDistance(boss, nearestPc) > 1) {
-            const moveRange = boss.moveRange !== undefined ? boss.moveRange : (SKILLS['move']?.range || 1);
+            const moveRange = getMoveRange(boss);
             let bestMovePos = { x: boss.x, y: boss.y };
             let minDist = getDistance(boss, nearestPc);
             for (let dy = -moveRange; dy <= moveRange; dy++) {
@@ -2181,16 +2224,17 @@ function listenForCombatTextEvents(gameId) {
                 }
             }
             if (bestMovePos.x !== boss.x || bestMovePos.y !== boss.y) {
-                await logAction(`🏃 ${boss.name}이(가) 이동합니다.`, "move");
+                await logAction(`🏃 ${boss.name}이(가) ${coordLabel(boss.x, boss.y)}에서 ${coordTo(bestMovePos.x, bestMovePos.y)} 이동합니다.`, "move");
                 await delay(1000);
                 await updateDoc(doc(db, 'games', gameId, 'characters', boss.id), { x: bestMovePos.x, y: bestMovePos.y });
                 boss.x = bestMovePos.x; boss.y = bestMovePos.y;
+                await breakStealthOnMove(boss);
             }
         }
 
         const idx = (round - 1) % usableSkills.length;
         const skillId = usableSkills[idx];
-        const fallbackTarget = findNearestEnemyTarget(boss) || boss;
+        const fallbackTarget = findTauntTarget(boss) || findNearestEnemyTarget(boss) || boss;
         await delay(600);
         const result = await executeSkill(boss, fallbackTarget, skillId);
         await delay(900);
@@ -2233,7 +2277,7 @@ function listenForCombatTextEvents(gameId) {
             return false;
         }
 
-        const moveRange = currentEnemy.moveRange !== undefined ? currentEnemy.moveRange : (SKILLS['move']?.range || 1);
+        const moveRange = getMoveRange(currentEnemy);
         const attackRange = skill.range;
         let bestMovePos = { x: currentEnemy.x, y: currentEnemy.y };
 
@@ -2269,10 +2313,11 @@ function listenForCombatTextEvents(gameId) {
         }
 
         if (bestMovePos.x !== currentEnemy.x || bestMovePos.y !== currentEnemy.y) {
-            await logAction(`🏃 ${currentEnemy.name}이(가) 이동합니다.`, "move");
+            await logAction(`🏃 ${currentEnemy.name}이(가) ${coordLabel(currentEnemy.x, currentEnemy.y)}에서 ${coordTo(bestMovePos.x, bestMovePos.y)} 이동합니다.`, "move");
             await delay(1000);
             await updateDoc(doc(db, 'games', gameId, 'characters', currentEnemy.id), { x: bestMovePos.x, y: bestMovePos.y });
             currentEnemy.x = bestMovePos.x; currentEnemy.y = bestMovePos.y;
+            await breakStealthOnMove(currentEnemy);
         }
 
         const updatedTarget = characters.find(c => c.id === target.id);
@@ -2288,11 +2333,7 @@ function listenForCombatTextEvents(gameId) {
 
     // 적 캐릭터의 턴 전체를 예고 없이 자동 실행합니다 (명중 시 최대 1회 추가행동 포함).
     async function runEnemyAutoTurn(enemy) {
-        if (enemy.statusEffects?.some(e => e.id === 'stunned')) {
-            await logAction(`💫 ${enemy.name}은(는) [기절] 상태이므로 행동하지 못합니다.`, "system");
-            await completeActorTurn(enemy.id, false);
-            return;
-        }
+        if (getSkipReason(enemy)) { await skipTurnForStatus(enemy); return; }
 
         actingEnemyId = enemy.id;
         await setDoc(doc(db, 'games', gameId), { actingEnemyId: enemy.id }, { merge: true });
@@ -2393,20 +2434,51 @@ function isAttackPossible(attacker, target, attackRange) {
     return false;
 }
 
-    async function updateBodyHP(char, amount, logType) {
-        const newHp = Math.min(char.maxBodyHp, Math.max(0, char.bodyHp + amount));
+    async function updateBodyHP(char, amount, logType, opts = {}) {
+        // [수호]: 다른 아군이 받는 피해는 수호 중인 아군이 대신 받습니다
+        if (amount < 0 && char.type === 'PC' && !opts.noRedirect) {
+            const guardian = getGuardian(char.id);
+            if (guardian) {
+                await logAction(`⚔️ [수호] ${guardian.name}이(가) ${char.name} 대신 신체 피해 ${-amount}을(를) 받습니다.`, "damage");
+                await updateBodyHP(guardian, amount, logType, { noRedirect: true });
+                return char.bodyHp;
+            }
+        }
+        const floor = (amount < 0 && hasEffect(char, 'guardian')) ? 1 : 0;
+        const newHp = Math.min(char.maxBodyHp, Math.max(Math.min(floor, char.bodyHp), char.bodyHp + amount));
         const updates = { bodyHp: newHp, hp: newHp };
+        const lost = Math.max(0, char.bodyHp - newHp);
         char.bodyHp = newHp; char.hp = newHp;
         if (amount < 0) {
             const taken = (char.damageTakenThisRound || 0) + Math.abs(amount);
             updates.damageTakenThisRound = taken;
             char.damageTakenThisRound = taken;
+            updates.bodyDamageThisRound = (char.bodyDamageThisRound || 0) + lost;
+            char.bodyDamageThisRound = updates.bodyDamageThisRound;
         }
+        // 적은 신체 내구도가 0이 되면 맵에서 퇴장합니다
+        const leaves = newHp === 0 && char.type === 'ENEMY' && char.x !== null;
+        if (leaves) { updates.x = null; updates.y = null; }
         await updateDoc(doc(db, 'games', gameId, 'characters', char.id), updates);
+        if (leaves) {
+            char.x = null; char.y = null;
+            await logAction(`🚪 ${char.name}이(가) 쓰러져 맵에서 퇴장합니다.`, "system");
+        }
         return newHp;
     }
-    async function updateMentalHP(char, amount) {
-        const newMp = Math.min(char.maxMentalHp, Math.max(0, char.mentalHp + amount));
+    async function updateMentalHP(char, amount, opts = {}) {
+        if (amount < 0 && char.type === 'PC' && !opts.noRedirect) {
+            const guardian = getGuardian(char.id);
+            if (guardian) {
+                await logAction(`⚔️ [수호] ${guardian.name}이(가) ${char.name} 대신 정신 내구도 ${-amount} 감소를 받습니다.`, "damage");
+                await updateMentalHP(guardian, amount, { noRedirect: true });
+                return char.mentalHp;
+            }
+        }
+        // 최대치를 넘겨 둔 정신 내구도([포식])는 이후 회복으로 깎이지 않습니다
+        const cap = opts.allowOverMax ? Infinity : Math.max(char.maxMentalHp, char.mentalHp);
+        const floor = (amount < 0 && hasEffect(char, 'guardian')) ? 1 : 0;
+        const newMp = Math.min(cap, Math.max(Math.min(floor, char.mentalHp), char.mentalHp + amount));
         const updates = { mentalHp: newMp, mp: newMp };
         char.mentalHp = newMp; char.mp = newMp;
         if (amount < 0) {
@@ -2490,21 +2562,13 @@ function isAttackPossible(attacker, target, attackRange) {
     if (isAoeSkill) {
         finalDamage = rawDamage;
     } else {
-        let defPct = defender.defPct || 0;
-        // Check defender defBuff status effect
-        const defBuffEffect = defender.statusEffects?.find(e => e.id === 'defBuff');
-        if (defBuffEffect) defPct = Math.min(100, defPct + (defBuffEffect.value || 0));
+        const defBonus = (defender.statusEffects || []).filter(e => e.id === 'defBuff' || e.id === 'barkArmor').reduce((s, e) => s + (e.value || 0), 0);
+        const defPct = Math.min(100, (defender.defPct || 0) + defBonus);
         finalDamage = Math.max(0, Math.floor(rawDamage * (1 - defPct / 100)));
     }
     finalDamage = Math.max(1, finalDamage);
 
-    // Check anchored: heal mentalHp by damage/2
-    const isAnchored = defender.statusEffects?.some(e => e.id === 'anchored');
-    if (isAnchored) {
-        const anchorHeal = Math.floor(finalDamage / 2);
-        await updateMentalHP(defender, anchorHeal);
-        await logAction(`⚓ [정착] ${defender.name}: 피해의 절반(${anchorHeal}) 정신 내구도 회복!`, "heal");
-    }
+    // [정착]의 정신 내구도 회복은 라운드 종료 시 한 번에 정산합니다 (endRound)
 
     const newBodyHp = await updateBodyHP(defender, -finalDamage, "damage");
     await triggerCombatText(defender, `-${finalDamage}`, 'damage');
@@ -2830,6 +2894,22 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         }
     }
 
+    // [정착]: 모든 상태이상 면역
+    if (HARMFUL_EFFECTS.includes(effectInfo.id) && target.statusEffects?.some(e => e.id === 'anchored')) {
+        await logAction(`⚓ ${target.name}은(는) [정착] 상태라 [${PREDEFINED_EFFECTS[effectInfo.id].name}]에 면역입니다.`, "system");
+        return;
+    }
+    // [수호]: 다른 아군에게 오는 상태이상은 수호 중인 아군이 대신 받습니다
+    if (HARMFUL_EFFECTS.includes(effectInfo.id) && target.type === 'PC' && !effectInfo.noRedirect) {
+        const guardian = getGuardian(target.id);
+        if (guardian) {
+            await logAction(`⚔️ [수호] ${guardian.name}이(가) ${target.name} 대신 [${PREDEFINED_EFFECTS[effectInfo.id].name}]을(를) 받습니다.`, "system");
+            return applyStatusEffect(guardian, { ...effectInfo, noRedirect: true }, casterId);
+        }
+    }
+    // [기절]: 다음 차례 1회를 건너뛰면 해제됩니다 (그 전까지 유지)
+    if (effectInfo.id === 'stunned') effectInfo = { ...effectInfo, turns: 99 };
+
     const baseEffect = PREDEFINED_EFFECTS[effectInfo.id];
 
     const newEffect = {
@@ -2858,20 +2938,15 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
 
     const currentEffects = targetDoc.data().statusEffects || [];
 
-    // 도발은 예외: 다른 시전자가 다시 도발을 걸면 이전 도발을 새 도발로 교체합니다.
-    if (newEffect.id !== 'taunted' && currentEffects.some(e => e.id === newEffect.id)) {
-        console.log(`${target.name}은(는) 이미 ${newEffect.name} 효과를 받고 있습니다.`);
-        return;
-    }
-
-    const updatedEffects = newEffect.id === 'taunted'
-        ? [...currentEffects.filter(e => e.id !== 'taunted'), newEffect]
-        : [...currentEffects, newEffect];
+    // 같은 상태이상이 이미 있으면 새 것으로 갱신합니다 (도발은 새 시전자로 교체).
+    const updatedEffects = [...currentEffects.filter(e => e.id !== newEffect.id), newEffect];
     await updateDoc(targetRef, { statusEffects: updatedEffects });
     target.statusEffects = updatedEffects;
     const icon = STATUS_EFFECT_ICONS[newEffect.id] || '🔗';
 
-    await logAction(`${icon} ${target.name}이(가) [${newEffect.name}] 효과를 받았습니다! (${newEffect.turnsRemaining}턴 지속)`, "system");
+    const durText = newEffect.id === 'stunned' ? '다음 차례 1회' : newEffect.turnsRemaining >= 999 ? (newEffect.id === 'stealth' ? '이동 전까지' : '해제 전까지') : `${newEffect.turnsRemaining}라운드`;
+    const byText = newEffect.id === 'taunted' && casterId ? ` (도발: ${characters.find(c => c.id === casterId)?.name || '?'})` : '';
+    await logAction(`${icon} ${target.name}이(가) [${newEffect.name}] 효과를 받았습니다!${byText} (${durText})`, "system");
 
     // 은폐 부여 시: 이 캐릭터가 걸어둔 모든 도발이 해제됩니다.
     if (newEffect.id === 'stealth') {
@@ -2924,9 +2999,8 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
 
     let gameResult = null;
 
-    if (remainingPCs === 0) {
-        gameResult = { title: "패배...", message: "모든 아군이 쓰러졌습니다." };
-    } else if (remainingEnemies === 0) {
+    // 아군이 모두 쓰러져도 라운드 종료 시 부활하므로 패배가 아닙니다 (패배는 라운드 종료 시 정신 내구도 기준).
+    if (remainingEnemies === 0) {
         gameResult = { title: "승리!", message: "모든 적을 물리쳤습니다." };
     }
 
@@ -2941,6 +3015,547 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     return false; // 게임 계속됨
 }
     // 반환값: { success: 행동이 실제로 발생했는지, bonus: 명중 판정 성공으로 직후 1회 추가행동 권한을 얻었는지 }
+    // ==================== 포지션 스킬 (2026-10 스킬 문서 기준) ====================
+    // 사거리·비용·계수는 게임 데이터(SKILLS)에서 읽고, 대상 지정 방식과 효과는 여기서 정합니다.
+    // mode: self(즉시 시전) / selfAoe(시전자 중심 범위, 즉시) / enemy / ally / enemyThenCell(추격) / allyThenCell(구조) / enemyThenAlly(매복)
+    const PLAYER_SKILL_SPECS = {
+        '지탱': { mode: 'self' }, '목갑': { mode: 'self' }, '구조': { mode: 'allyThenCell' }, '정착': { mode: 'self' },
+        '의지': { mode: 'selfAoe' }, '수호': { mode: 'self', once: true, casterMentalMax: 50 },
+        '추격': { mode: 'enemyThenCell' }, '연쇄': { mode: 'enemy' }, '섬전': { mode: 'enemy', hitSet: 50 }, '살상': { mode: 'selfAoe' },
+        '관통': { mode: 'enemy', casterMentalMax: 60 }, '포식': { mode: 'self', once: true },
+        '속박': { mode: 'selfAoe' }, '암전': { mode: 'enemy' }, '박탈': { mode: 'enemy', canTargetStealth: true, hitSet: 50 },
+        '매복': { mode: 'enemyThenAlly' }, '전이': { mode: 'enemy', canTargetStealth: true }, '잠식': { mode: 'self', once: true },
+        '결속': { mode: 'ally', allowSelf: true, healing: true }, '순환': { mode: 'ally', allowSelf: true, healing: true },
+        '정화': { mode: 'self' }, '태동': { mode: 'ally', allowSelf: false, healing: true },
+        '소생': { mode: 'ally', allowSelf: true, unlimited: true, healing: true, targetMentalMax: 50 }, '개화': { mode: 'self', once: true },
+    };
+    const isPositionSkill = (id) => !!PLAYER_SKILL_SPECS[id] && !!SKILLS[id];
+    // 상태이상(해로운 효과) — [정착] 면역과 [수호] 대리 수용 대상
+    const HARMFUL_EFFECTS = ['rooted', 'stunned', 'poisoned', 'cursed', 'taunted', 'mentalRot', 'confused', 'linkedFate', 'hitLock'];
+    let skillStep = null;          // { skillId, step: 1|2, targetId }
+    let playerSkillBusy = false;
+
+    const cellKey = (x, y) => `${x},${y}`;
+    function occupiedCells(c) {
+        const size = c.size || 1, out = [];
+        for (let i = 0; i < size; i++) for (let j = 0; j < size; j++) out.push({ x: c.x + i, y: c.y + j });
+        return out;
+    }
+    // 두 캐릭터(또는 칸) 사이 거리가 range 이내인지 (크기와 범위 모양 고려)
+    function withinRange(a, b, range, shape = 'diamond') {
+        if (!a || !b || a.x === null || b.x === null) return false;
+        const ac = a.size ? occupiedCells(a) : [a], bc = b.size ? occupiedCells(b) : [b];
+        return ac.some(p => bc.some(q => {
+            const dx = Math.abs(p.x - q.x), dy = Math.abs(p.y - q.y);
+            if (shape === 'square') return Math.max(dx, dy) <= range;
+            if (shape === 'cross') return (dx === 0 || dy === 0) && dx + dy <= range;
+            return dx + dy <= range;
+        }));
+    }
+    function cellsAround(center, range, shape = 'diamond') {
+        const out = [];
+        for (let y = 0; y < BOARD_SIZE; y++) for (let x = 0; x < BOARD_SIZE; x++) {
+            if (withinRange(center, { x, y }, range, shape)) out.push({ x, y });
+        }
+        return out;
+    }
+    const livingPlaced = (c) => c && c.x !== null && c.bodyHp > 0;
+    const enemiesOf = (caster) => characters.filter(c => c.type !== caster.type && livingPlaced(c));
+    const alliesOf = (caster) => characters.filter(c => c.type === caster.type && livingPlaced(c));
+    const hasEffect = (c, id) => !!c?.statusEffects?.some(e => e.id === id);
+    function getGuardian(exceptId) {
+        return characters.find(c => c.type === 'PC' && c.id !== exceptId && livingPlaced(c) && hasEffect(c, 'guardian')) || null;
+    }
+    function getMoveRange(char) {
+        if (hasEffect(char, 'rooted')) return 1; // [속박]: 이동력 1
+        return char.moveRange !== undefined ? char.moveRange : (SKILLS['move']?.range || 1);
+    }
+    function getEffectiveHitPct(char) {
+        const st = char.statusEffects || [];
+        if (st.some(e => e.id === 'corrosion')) return 0;
+        const lock = st.find(e => e.id === 'hitLock');
+        if (lock) return lock.value ?? 1;
+        const set = st.filter(e => e.id === 'hitSet').pop();
+        if (set) return set.value;
+        return char.hitPct ?? 80;
+    }
+    // 효과를 직접 붙입니다(면역·대리 수용을 거치지 않는 자기 버프 등). 같은 종류는 새 것으로 교체합니다.
+    async function setOwnEffect(char, effect) {
+        const base = PREDEFINED_EFFECTS[effect.id] || {};
+        const eff = { ...base, ...effect, isNew: true };
+        if (eff.turnsRemaining === undefined) eff.turnsRemaining = 1;
+        const list = [...(char.statusEffects || []).filter(e => e.id !== eff.id || (eff.id === 'defBuff' && e.name !== eff.name)), eff];
+        char.statusEffects = list;
+        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { statusEffects: list });
+    }
+    async function removeEffects(char, pred) {
+        const before = char.statusEffects || [];
+        const list = before.filter(e => !pred(e));
+        if (list.length === before.length) return false;
+        char.statusEffects = list;
+        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { statusEffects: list });
+        return true;
+    }
+
+    // 명중 판정. 성공하면 추가 행동 권한, [명중률 변경] 해제 등을 처리합니다.
+    async function performHitRoll(attacker) {
+        const effectiveHitPct = getEffectiveHitPct(attacker);
+        const hitRoll = Math.floor(Math.random() * 100) + 1;
+        const ok = hitRoll <= effectiveHitPct;
+        if (!ok) {
+            await logAction(`💨 명중 판정 실패. (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) 공격은 그대로 적중하지만 추가 행동은 없습니다.`, "system");
+            return false;
+        }
+        await logAction(`✅ 명중 판정 성공! (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
+        if (await removeEffects(attacker, e => e.id === 'hitSet')) {
+            await logAction(`🎯 ${attacker.name}의 명중률이 원래대로 돌아왔습니다.`, "system");
+        }
+        const sharpBearers = characters.filter(c => c.type === attacker.type && hasEffect(c, 'sharp'));
+        for (const bearer of sharpBearers) {
+            await removeEffects(bearer, e => e.id === 'sharp');
+            await logAction(`💢 ${bearer.name}의 [첨예] 효과가 해제되었습니다.`, "system");
+        }
+        const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
+        if (daatEffect) {
+            for (const pc of characters.filter(c => c.type === 'PC' && livingPlaced(c))) { await updateMentalHP(pc, -20); }
+            await removeEffects(attacker, e => e.id === 'hitLock' && e.daatBuff);
+            await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
+        }
+        return true;
+    }
+
+    // 스킬 피해 1회. 단일 대상은 방어율 적용, 광역은 기존 규칙대로 방어율 무시.
+    async function dealSkillDamage(attacker, defender, raw, skillName, isAoe, opts = {}) {
+        let finalDamage = raw;
+        if (!isAoe) {
+            const bonus = (defender.statusEffects || []).filter(e => e.id === 'defBuff' || e.id === 'barkArmor').reduce((s, e) => s + (e.value || 0), 0);
+            const defPct = Math.min(100, (defender.defPct || 0) + bonus);
+            finalDamage = Math.floor(raw * (1 - defPct / 100));
+        }
+        finalDamage = Math.max(1, finalDamage);
+        const token = document.querySelector(`.character-token[data-char-id="${defender.id}"]`);
+        if (token) { token.classList.add('hit-animation', 'show-hit-overlay'); setTimeout(() => token.classList.remove('hit-animation', 'show-hit-overlay'), 1000); }
+        const newBodyHp = await updateBodyHP(defender, -finalDamage, "damage");
+        await triggerCombatText(defender, `-${finalDamage}`, 'damage');
+        let message = `💥 ${attacker.name}의 ${skillName}! ${defender.name}에게 **${finalDamage} 신체 피해!**`;
+        if (!isAoe && raw !== finalDamage) message += ` (원시: ${raw} → 방어율 적용)`;
+        if (newBodyHp === 0) message += `<br>🩸 ${defender.name}의 신체 내구도가 0이 되었습니다!`;
+        await logAction(message, "damage");
+        if (attacker.type === 'PC' && !opts.noTally) {
+            attacker.totalDamage = (attacker.totalDamage || 0) + finalDamage;
+            await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { totalDamage: attacker.totalDamage });
+        }
+        return finalDamage;
+    }
+
+    // 이동 마무리: 이번 차례에 위치가 바뀌었다면 이동 기록을 남기고 [은폐]를 해제합니다.
+    // [은폐]: 이동하면 해제 (아군·적 모두)
+    async function breakStealthOnMove(char) {
+        if (await removeEffects(char, e => e.id === 'stealth')) await logAction(`👻 ${char.name}이(가) 이동하여 [은폐]가 해제되었습니다.`, "system");
+    }
+    async function finalizeMove(char) {
+        if (!char || !preMovePosition) return;
+        if (char.x !== preMovePosition.x || char.y !== preMovePosition.y) {
+            await logAction(`🏃 ${char.name}이(가) ${coordLabel(preMovePosition.x, preMovePosition.y)}에서 ${coordTo(char.x, char.y)} 이동했습니다.`, "move");
+            await breakStealthOnMove(char);
+        }
+        preMovePosition = { x: char.x, y: char.y };
+    }
+    async function moveCharacterBySkill(char, x, y, reason) {
+        if (char.x === x && char.y === y) return false;
+        const from = coordLabel(char.x, char.y);
+        await updateDoc(doc(db, 'games', gameId, 'characters', char.id), { x, y });
+        char.x = x; char.y = y;
+        await logAction(`🏃 [${reason}] ${char.name}이(가) ${from}에서 ${coordTo(x, y)} 이동했습니다.`, "move");
+        await breakStealthOnMove(char);
+        return true;
+    }
+
+    // 정신 내구도 0: 자기 차례에 70% 확률로 무작위 아군 1명을 운용력만큼 공격 (공격하면 그 차례 종료)
+    const needsMadnessCheck = (c) => c && c.type === 'PC' && c.bodyHp > 0 && c.mentalHp <= 0 && c.madnessCheckedRound !== round;
+    async function runMadnessCheck(pc) {
+        if (!needsMadnessCheck(pc)) return false;
+        // 한 차례에 한 번만 판정 (여러 화면에서 동시에 눌러도 한 번)
+        const ref = doc(db, 'games', gameId, 'characters', pc.id);
+        const claimed = await runTransaction(db, async tx => {
+            const d = (await tx.get(ref)).data();
+            if (!d || d.madnessCheckedRound === round) return false;
+            tx.update(ref, { madnessCheckedRound: round });
+            return true;
+        });
+        if (!claimed) return false;
+        pc.madnessCheckedRound = round;
+        const roll = Math.floor(Math.random() * 100) + 1;
+        if (roll > 70) {
+            await logAction(`🧠 ${pc.name}의 정신 내구도가 0이지만 버텨 냈습니다. (판정 ${roll} > 70) 평소처럼 행동합니다.`, "system");
+            render();
+            return false;
+        }
+        const victims = characters.filter(c => c.type === 'PC' && c.id !== pc.id && livingPlaced(c) && !isStealthed(c));
+        if (victims.length === 0) {
+            await logAction(`😵 ${pc.name}이(가) 정신 붕괴로 아군을 공격하려 했지만 대상이 없습니다. (판정 ${roll} ≤ 70)`, "system");
+        } else {
+            const victim = victims[Math.floor(Math.random() * victims.length)];
+            await logAction(`😵 ${pc.name}이(가) 정신 붕괴로 ${victim.name}을(를) 공격합니다! (판정 ${roll} ≤ 70)`, "damage");
+            await dealSkillDamage(pc, victim, getEffectiveOp(pc), '정신 붕괴 공격', false, { noTally: true });
+        }
+        selectedCharacterId = null; selectedSkill = null; skillStep = null;
+        await completeActorTurn(pc.id, false);
+        return true;
+    }
+
+    // [기절]·[행동 불가]로 차례를 건너뛰어야 하는지
+    function getSkipReason(c) {
+        if (hasEffect(c, 'stunned')) return 'stunned';
+        if (hasEffect(c, 'exhausted')) return 'exhausted';
+        return null;
+    }
+    let skippingTurnId = null;
+    async function skipTurnForStatus(char) {
+        const reason = getSkipReason(char);
+        if (!reason || skippingTurnId === char.id) return false;
+        skippingTurnId = char.id;
+        try {
+            await removeEffects(char, e => e.id === reason); // 차례 1회를 막고 해제됩니다
+            await logAction(reason === 'stunned'
+                ? `💫 ${char.name}은(는) [기절] 상태라 이번 차례를 건너뜁니다.`
+                : `😮‍💨 ${char.name}은(는) [포식]의 반동으로 이번 라운드에 행동할 수 없습니다.`, "system");
+            await completeActorTurn(char.id, false);
+        } finally { skippingTurnId = null; }
+        return true;
+    }
+
+    // 지금 단계에서 고를 수 있는 칸(clickable)과 보여 줄 범위(area)
+    function computeSkillTargets(caster, skillId, step = skillStep) {
+        const skill = SKILLS[skillId], spec = PLAYER_SKILL_SPECS[skillId];
+        const res = { area: new Set(), clickable: new Set(), instant: false, kind: 'attack' };
+        if (!skill || !spec || caster.x === null) return res;
+        const shape = skill.rangeShape || 'diamond';
+        res.kind = (skill.category === 'Attack') ? 'attack' : 'support';
+        const addChar = (set, c) => occupiedCells(c).forEach(p => set.add(cellKey(p.x, p.y)));
+        const st = step && step.skillId === skillId ? step.step : 1;
+
+        if (spec.mode === 'self') {
+            res.instant = true;
+            if (['정화', '개화'].includes(skillId)) alliesOf(caster).forEach(c => addChar(res.area, c));
+            else addChar(res.area, caster);
+            return res;
+        }
+        if (spec.mode === 'selfAoe') {
+            res.instant = true;
+            cellsAround(caster, skill.aoeRange || 0, skill.aoeShape || 'diamond').forEach(p => res.area.add(cellKey(p.x, p.y)));
+            return res;
+        }
+        if (st === 1) {
+            if (!spec.unlimited) cellsAround(caster, skill.range || 0, shape).forEach(p => res.area.add(cellKey(p.x, p.y)));
+            const wantEnemy = ['enemy', 'enemyThenCell', 'enemyThenAlly'].includes(spec.mode);
+            const pool = wantEnemy ? enemiesOf(caster) : alliesOf(caster);
+            pool.forEach(c => {
+                if (!wantEnemy && c.id === caster.id && !spec.allowSelf) return;
+                if (wantEnemy && isStealthed(c) && !spec.canTargetStealth) return;
+                if (!spec.unlimited && !withinRange(caster, c, skill.range || 0, shape)) return;
+                addChar(res.clickable, c);
+                if (spec.unlimited) addChar(res.area, c);
+            });
+            return res;
+        }
+        // 2단계
+        const first = characters.find(c => c.id === step.targetId);
+        if (!first) return res;
+        if (spec.mode === 'enemyThenCell') {          // 추격: 대상 적에게 인접한 칸 (지금 자리 포함)
+            cellsAround(first, 1, 'diamond').forEach(p => {
+                if (occupiedCells(first).some(q => q.x === p.x && q.y === p.y)) return;
+                if (canPlaceCharacter(caster, p.x, p.y)) { res.clickable.add(cellKey(p.x, p.y)); res.area.add(cellKey(p.x, p.y)); }
+            });
+        } else if (spec.mode === 'allyThenCell') {    // 구조: 시전자 1마스 내 칸 (대상 아군의 지금 자리 포함)
+            cellsAround(caster, 1, 'diamond').forEach(p => {
+                if (p.x === caster.x && p.y === caster.y) return;
+                if (canPlaceCharacter(first, p.x, p.y)) { res.clickable.add(cellKey(p.x, p.y)); res.area.add(cellKey(p.x, p.y)); }
+            });
+        } else if (spec.mode === 'enemyThenAlly') {   // 매복: 위치 무관 아군 (시전자 포함)
+            alliesOf(caster).forEach(c => { addChar(res.clickable, c); addChar(res.area, c); });
+            res.kind = 'support';
+        }
+        return res;
+    }
+
+    // 사용 가능 여부 (불가하면 이유 문자열)
+    function playerSkillBlockReason(caster, skillId) {
+        const skill = SKILLS[skillId], spec = PLAYER_SKILL_SPECS[skillId];
+        if (!skill || !spec) return '알 수 없는 스킬';
+        if (spec.once && (caster.onceUsedSkillIds || []).includes(skillId)) return '레이드 당 1회 (사용함)';
+        if (spec.casterMentalMax !== undefined && caster.mentalHp > spec.casterMentalMax) return `정신 ${spec.casterMentalMax} 이하일 때`;
+        if ((caster.mentalHp || 0) < (skill.mpCost || 0)) return '정신 내구도 부족';
+        return null;
+    }
+
+    // 포지션 스킬 실행. sel = { target, cell, ally }
+    async function executePlayerSkill(caster, skillId, sel = {}) {
+        const skill = SKILLS[skillId], spec = PLAYER_SKILL_SPECS[skillId];
+        const op = getEffectiveOp(caster);
+        const fail = async (msg) => { await logAction(`⚠️ ${msg}`, "system"); return { success: false, bonus: false, gameEnded: false }; };
+        const block = playerSkillBlockReason(caster, skillId);
+        if (block) return fail(`[${skill.name}] 사용 불가: ${block}`);
+        const target = sel.target ? characters.find(c => c.id === sel.target.id) : null;
+
+        // ---- 대상 조건 확인 (비용을 내기 전에) ----
+        if (['enemy', 'enemyThenCell', 'enemyThenAlly', 'ally', 'allyThenCell'].includes(spec.mode) && !target) return fail(`[${skill.name}] 대상을 선택하세요.`);
+        if (spec.healing && hasEffect(target, 'cursed')) return fail(`${target.name}은(는) [저주] 상태이므로 [${skill.name}]의 대상이 될 수 없습니다.`);
+        if (skillId === '관통' && target.bodyHp > 100) return fail(`[관통] ${target.name}의 신체 내구도(${target.bodyHp})가 100을 넘어 사살할 수 없습니다.`);
+        if (skillId === '소생' && target.mentalHp > 50) return fail(`[소생] ${target.name}의 정신 내구도(${target.mentalHp})가 50을 넘습니다.`);
+        if (skillId === '구조' && hasEffect(target, 'anchored')) return fail(`[구조] ${target.name}은(는) [정착] 상태라 이동시킬 수 없습니다.`);
+        if (skillId === '전이') {
+            const movable = (target.statusEffects || []).filter(e => HARMFUL_EFFECTS.includes(e.id) && e.id !== 'taunted');
+            if (movable.length === 0) return fail(`[전이] ${target.name}에게 옮길 상태이상이 없습니다.`);
+        }
+
+        // ---- 비용 (1회만) ----
+        if (skill.mpCost > 0) await updateMentalHP(caster, -skill.mpCost);
+        await logAction(`${skill.icon || '✨'} ${caster.name}이(가) [${skill.name}]을(를) 사용합니다.`, "system");
+
+        // ---- 명중 판정 (공격 스킬) ----
+        let bonus = false;
+        if (skill.category === 'Attack') {
+            if (spec.hitSet) {
+                await setOwnEffect(caster, { id: 'hitSet', name: `명중률 ${spec.hitSet}%`, value: spec.hitSet, turnsRemaining: 99 });
+                await logAction(`🎯 ${caster.name}의 명중률이 명중에 성공할 때까지 ${spec.hitSet}%가 됩니다.`, "system");
+            }
+            bonus = await performHitRoll(caster);
+        }
+
+        // ---- 효과 ----
+        const aoeTargets = () => enemiesOf(caster).filter(c => withinRange(caster, c, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
+        switch (skillId) {
+            case '지탱': {
+                const n = alliesOf(caster).filter(c => withinRange(caster, c, 2)).length; // 시전자 본인 포함
+                await setOwnEffect(caster, { id: 'defBuff', name: '지탱', value: n * 5, turnsRemaining: 1 });
+                await logAction(`🛡️ [지탱] 2마스 내 아군 ${n}명(본인 포함) → ${caster.name} 방어율 +${n * 5}% (1라운드).`, "system");
+                break;
+            }
+            case '목갑':
+                await setOwnEffect(caster, { id: 'barkArmor', value: 25, turnsRemaining: 1 });
+                await logAction(`🪵 [목갑] ${caster.name} 방어율 +25% (1라운드).`, "system");
+                break;
+            case '구조': {
+                const prev = { x: target.x, y: target.y, size: target.size || 1 };
+                const stunned = enemiesOf(caster).filter(e => withinRange(prev, e, 1));
+                for (const e of stunned) await applyStatusEffect(e, { id: 'stunned', turns: 1 }, caster.id);
+                const moved = await moveCharacterBySkill(target, sel.cell.x, sel.cell.y, '구조');
+                if (!moved) await logAction(`🤝 [구조] ${target.name}은(는) 이미 ${caster.name} 곁에 있어 제자리에 머뭅니다.`, "system");
+                if (stunned.length === 0) await logAction(`🤝 [구조] ${target.name} 곁에 인접한 적이 없어 [기절]은 부여되지 않았습니다.`, "system");
+                break;
+            }
+            case '정착':
+                await setOwnEffect(caster, { id: 'anchored', turnsRemaining: 1, thisRoundOnly: true });
+                await logAction(`⚓ [정착] ${caster.name}: 이번 라운드 동안 위치 고정, 상태이상·강제이동 면역. 라운드 종료 시 이번 라운드 피격 데미지의 절반만큼 정신 내구도를 회복합니다.`, "system");
+                break;
+            case '의지': {
+                const ts = aoeTargets();
+                if (ts.length === 0) await logAction(`🔥 [의지] 3마스 내에 적이 없습니다.`, "system");
+                for (const t of ts) {
+                    await dealSkillDamage(caster, t, Math.round(op * 3), '의지', true);
+                    if (t.bodyHp > 0) await applyStatusEffect(t, { id: 'taunted', turns: 9999 }, caster.id);
+                }
+                break;
+            }
+            case '수호':
+                await setOwnEffect(caster, { id: 'guardian', turnsRemaining: 1 });
+                await logAction(`⚔️ [수호] ${caster.name}: 1라운드 동안 모든 아군의 피해와 상태이상을 대신 받습니다. ${caster.name}의 내구도는 1 아래로 내려가지 않습니다.`, "system");
+                break;
+            case '추격': {
+                await moveCharacterBySkill(caster, sel.cell.x, sel.cell.y, '추격');
+                await dealSkillDamage(caster, target, Math.round(op * 3), '추격', false);
+                break;
+            }
+            case '연쇄': {
+                const chained = caster.lastSkillId === '추격';
+                await dealSkillDamage(caster, target, Math.round(op * (chained ? 5 : 4)), chained ? '연쇄(추격 연계)' : '연쇄', false);
+                break;
+            }
+            case '섬전':
+                await dealSkillDamage(caster, target, Math.round(op * 3), '섬전', false);
+                break;
+            case '살상': {
+                const ts = aoeTargets();
+                if (ts.length === 0) { await logAction(`🗡️ [살상] 3마스 내에 적이 없습니다.`, "system"); break; }
+                for (const t of ts) await dealSkillDamage(caster, t, Math.round(op * 2), '살상', true);
+                const extra = ts.length * 2;
+                for (const t of ts.filter(livingPlaced)) await dealSkillDamage(caster, t, extra, `살상 추가타(${ts.length}체×2)`, true);
+                break;
+            }
+            case '관통':
+                await updateBodyHP(target, -target.bodyHp, "damage");
+                await logAction(`💉 [관통] ${caster.name}: ${target.name}을(를) 즉시 사살했습니다.`, "damage");
+                break;
+            case '포식': {
+                const total = caster.totalDamage || 0, heal = Math.floor(total / 5);
+                for (const pc of characters.filter(c => c.type === 'PC' && c.x !== null)) await updateMentalHP(pc, heal, { allowOverMax: true });
+                caster.totalDamage = 0;
+                await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), { totalDamage: 0 });
+                await setOwnEffect(caster, { id: 'exhausted', turnsRemaining: 1 });
+                await logAction(`🍴 [포식] 누적 피해 ${total}÷5 = ${heal}만큼 모든 아군 정신 내구도 회복(최대치 초과 가능). ${caster.name}은(는) 다음 라운드에 행동할 수 없습니다.`, "heal");
+                break;
+            }
+            case '속박': {
+                const ts = aoeTargets();
+                if (ts.length === 0) await logAction(`🔗 [속박] 2마스 내에 적이 없습니다.`, "system");
+                for (const t of ts) {
+                    await dealSkillDamage(caster, t, Math.round(op * 3), '속박', true);
+                    if (t.bodyHp > 0) await applyStatusEffect(t, { id: 'rooted', turns: 1 }, caster.id);
+                }
+                break;
+            }
+            case '암전':
+                await applyStatusEffect(target, { id: 'poisoned', turns: 3, value: op }, caster.id);
+                break;
+            case '박탈':
+                if (await removeEffects(target, e => e.id === 'stealth')) await logAction(`🔎 [박탈] ${target.name}의 [은폐]가 사라졌습니다.`, "system");
+                else await logAction(`🔎 [박탈] ${target.name}은(는) [은폐] 상태가 아니었습니다.`, "system");
+                break;
+            case '매복': {
+                await dealSkillDamage(caster, target, Math.round(op * 4), '매복', false);
+                const ally = characters.find(c => c.id === sel.ally?.id);
+                if (ally) await applyStatusEffect(ally, { id: 'stealth', turns: 9999 }, caster.id);
+                break;
+            }
+            case '전이': {
+                const effects = (target.statusEffects || []).filter(e => HARMFUL_EFFECTS.includes(e.id) && e.id !== 'taunted');
+                const recipients = enemiesOf(caster).filter(c => c.id !== target.id && withinRange(caster, c, 3));
+                if (recipients.length === 0) { await logAction(`🔄 [전이] 시전자 3마스 내에 옮겨 받을 다른 적이 없습니다.`, "system"); break; }
+                for (const r of recipients) for (const e of effects) {
+                    await applyStatusEffect(r, { id: e.id, turns: e.turnsRemaining, value: e.value, speedMod: e.speedMod, targetId: e.targetId }, e.casterId || caster.id);
+                }
+                await logAction(`🔄 [전이] ${target.name}의 상태이상(${effects.map(e => e.name).join(', ')})을 ${recipients.map(r => r.name).join(', ')}에게 부여했습니다.`, "system");
+                break;
+            }
+            case '잠식': {
+                const n = enemiesOf(caster).filter(c => (c.statusEffects || []).length > 0).length;
+                await updateMentalHP(caster, n * 10);
+                const others = characters.filter(c => c.type === 'PC' && c.id !== caster.id && c.x !== null);
+                for (const a of others) {
+                    await updateMentalHP(a, n * 5);
+                    if (a.bodyHp > 0) await setOwnEffect(a, { id: 'hitSet', name: '명중률 100%', value: 100, turnsRemaining: 99 });
+                }
+                await setOwnEffect(caster, { id: 'corrosion', name: '잠식 반동', turnsRemaining: 1, speedFix: 1 });
+                await logAction(`🌑 [잠식] 상태이상이 있는 적 ${n}체 → ${caster.name} 정신 +${n * 10}, 다른 아군 정신 +${n * 5}. 다른 아군의 명중률 100%(1회 명중까지). ${caster.name}은(는) 다음 1라운드 동안 명중률 0%, 속도 1.`, "system");
+                break;
+            }
+            case '결속': {
+                const amt = Math.round(op * 3);
+                const hp = await updateBodyHP(target, amt, "heal");
+                await triggerCombatText(target, `+${amt}`, 'heal');
+                await logAction(`💚 [결속] ${target.name}의 신체 내구도 **${amt} 회복!** (→ ${hp})`, "heal");
+                break;
+            }
+            case '순환':
+                await setOwnEffect(target, { id: 'regenerating', name: '재생', value: op, turnsRemaining: 3, effectType: 'heal' });
+                await logAction(`♻️ [순환] ${target.name}에게 [재생] 부여 (다음 라운드부터 3라운드간 라운드마다 신체 ${op} 회복).`, "heal");
+                break;
+            case '정화': {
+                for (const pc of characters.filter(c => c.type === 'PC' && c.x !== null)) await updateMentalHP(pc, op);
+                await logAction(`✨ [정화] 아군 전원 정신 내구도 **${op} 회복!**`, "heal");
+                break;
+            }
+            case '태동':
+                await setOwnEffect(target, { id: 'growth', name: '생장', value: caster.op || 0, turnsRemaining: 3 });
+                await logAction(`🌱 [태동] ${target.name}에게 [생장] 부여 (운용력 +${caster.op || 0}, 3라운드).`, "system");
+                break;
+            case '소생': {
+                const mp = await updateMentalHP(target, 100);
+                await triggerCombatText(target, `+100`, 'heal');
+                await logAction(`💙 [소생] ${target.name}의 정신 내구도 **100 회복!** (→ ${mp})`, "heal");
+                break;
+            }
+            case '개화': {
+                const batch = writeBatch(db);
+                for (const pc of characters.filter(c => c.type === 'PC' && c.x !== null)) {
+                    const body = pc.id === caster.id ? 1 : pc.maxBodyHp;
+                    const mental = Math.max(pc.maxMentalHp, pc.mentalHp);
+                    Object.assign(pc, { bodyHp: body, hp: body, mentalHp: mental, mp: mental });
+                    batch.update(doc(db, 'games', gameId, 'characters', pc.id), { bodyHp: body, hp: body, mentalHp: mental, mp: mental });
+                }
+                await batch.commit();
+                await logAction(`🌸 [개화] 모든 아군의 내구도가 최대로 회복되었습니다. ${caster.name}의 신체 내구도는 1이 됩니다.`, "heal");
+                for (const e of enemiesOf(caster)) await applyStatusEffect(e, { id: 'taunted', turns: 1 }, caster.id);
+                break;
+            }
+        }
+
+        // ---- 기록 ----
+        const upd = { lastSkillId: skillId };
+        caster.lastSkillId = skillId;
+        if (spec.once) { caster.onceUsedSkillIds = [...(caster.onceUsedSkillIds || []), skillId]; upd.onceUsedSkillIds = caster.onceUsedSkillIds; }
+        await updateDoc(doc(db, 'games', gameId, 'characters', caster.id), upd);
+        const gameEnded = await checkGameEndCondition();
+        return { success: true, bonus: bonus && !gameEnded, gameEnded };
+    }
+
+    // 화면에서 포지션 스킬을 실행하고 차례를 넘깁니다.
+    async function runPlayerSkill(caster, skillId, sel) {
+        if (playerSkillBusy) return;
+        playerSkillBusy = true;
+        try {
+            await finalizeMove(caster);
+            const result = await executePlayerSkill(caster, skillId, sel);
+            selectedSkill = null; skillStep = null;
+            if (!result.success || result.gameEnded) { render(); return; }
+            await completeActorTurn(caster.id, result.bonus);
+        } finally { playerSkillBusy = false; }
+    }
+
+    // 보드 클릭: 포지션 스킬 대상 선택
+    async function handlePlayerSkillClick(caster, cellX, cellY, clickedChar) {
+        const skillId = selectedSkill, spec = PLAYER_SKILL_SPECS[skillId];
+        const t = computeSkillTargets(caster, skillId);
+        if (!t.clickable.has(cellKey(cellX, cellY))) return false;
+        const st = skillStep && skillStep.skillId === skillId ? skillStep.step : 1;
+        if (st === 1) {
+            if (!clickedChar) return false;
+            if (['enemyThenCell', 'allyThenCell', 'enemyThenAlly'].includes(spec.mode)) {
+                skillStep = { skillId, step: 2, targetId: clickedChar.id };
+                render();
+                return true;
+            }
+            await runPlayerSkill(caster, skillId, { target: clickedChar });
+            return true;
+        }
+        const first = characters.find(c => c.id === skillStep.targetId);
+        if (spec.mode === 'enemyThenAlly') {
+            if (!clickedChar) return false;
+            await runPlayerSkill(caster, skillId, { target: first, ally: clickedChar });
+        } else {
+            await runPlayerSkill(caster, skillId, { target: first, cell: { x: cellX, y: cellY } });
+        }
+        return true;
+    }
+    function skillStepHint(skillId) {
+        const spec = PLAYER_SKILL_SPECS[skillId]; if (!spec) return '';
+        const st = skillStep && skillStep.skillId === skillId ? skillStep.step : 1;
+        const first = st === 2 ? characters.find(c => c.id === skillStep.targetId) : null;
+        if (spec.mode === 'self' || spec.mode === 'selfAoe') return '아래 시전 버튼을 누르세요.';
+        if (st === 1) {
+            if (spec.mode.startsWith('enemy')) return '대상 적을 선택하세요.';
+            return spec.unlimited ? '대상 아군을 선택하세요 (거리 무관).' : '대상 아군을 선택하세요.';
+        }
+        if (spec.mode === 'enemyThenCell') return `${first?.name || '대상'}에게 인접한 이동할 칸을 선택하세요 (지금 자리 포함).`;
+        if (spec.mode === 'allyThenCell') return `${first?.name || '아군'}을(를) 옮길 칸을 선택하세요 (시전자 1마스 내, 그 아군의 지금 자리 포함).`;
+        if (spec.mode === 'enemyThenAlly') return '[은폐]를 줄 아군을 선택하세요 (시전자 포함).';
+        return '';
+    }
+    // 관리자가 게임을 열면 포지션 스킬을 최신 정의로 갱신합니다.
+    let skillsUpgrading = false;
+    async function upgradePositionSkillsIfNeeded(data) {
+        if (!isAdmin || skillsUpgrading || !gameId || (data.skillsVersion || 1) >= PLAYER_SKILLS_VERSION) return;
+        skillsUpgrading = true;
+        try {
+            const merged = { ...(data.skills || {}) };
+            ['move', ...POSITION_SKILL_IDS].forEach(id => { merged[id] = DEFAULT_SKILLS[id]; });
+            await setDoc(doc(db, 'games', gameId), { skills: merged, skillsVersion: PLAYER_SKILLS_VERSION }, { merge: true });
+            await logAction(`🛠️ 포지션 스킬이 최신 스킬 문서 기준(v${PLAYER_SKILLS_VERSION})으로 갱신되었습니다.`, "admin");
+        } catch (e) { console.error('스킬 갱신 실패', e); }
+        finally { skillsUpgrading = false; }
+    }
+
     async function executeSkill(attacker, target, skillId) {
     const skill = SKILLS[skillId];
     if (!skill || !target) return { success: false, bonus: false };
@@ -2968,36 +3583,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
 
         // 명중률 판정: 모든 공격 스킬은 지정 대상/범위 내 대상에게 무조건 적중합니다.
         // 명중률 판정이 성공하면 직후 1회 추가 행동(이동+스킬)이 가능해집니다 (적중 여부와는 무관).
-        {
-            const hitLockEffect = attacker.statusEffects?.find(e => e.id === 'hitLock');
-            const hasCorrosion = attacker.statusEffects?.some(e => e.id === 'corrosion');
-            const effectiveHitPct = hasCorrosion ? 0 : (hitLockEffect ? (hitLockEffect.value ?? 1) : (attacker.hitPct || 80));
-            const hitRoll = Math.floor(Math.random() * 100) + 1;
-            bonusEarned = hitRoll <= effectiveHitPct;
-            if (bonusEarned) {
-                await logAction(`✅ 명중 판정 성공! (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
-                // [첨예]: 같은 진영의 명중 판정 성공 시 해당 진영 전체의 첨예 효과가 해제됩니다.
-                const sharpBearers = characters.filter(c => c.type === attacker.type && c.statusEffects?.some(e => e.id === 'sharp'));
-                for (const bearer of sharpBearers) {
-                    const remaining = bearer.statusEffects.filter(e => e.id !== 'sharp');
-                    bearer.statusEffects = remaining;
-                    await updateDoc(doc(db, 'games', gameId, 'characters', bearer.id), { statusEffects: remaining });
-                    await logAction(`💢 ${bearer.name}의 [첨예] 효과가 해제되었습니다.`, "system");
-                }
-                // [דָּעַת]: 명중률 증가 버프를 가진 채 명중 판정 성공 시 아군 전체 정신 20 감소 후 버프 해제
-                const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
-                if (daatEffect) {
-                    const allPCsForDaat = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
-                    for (const pc of allPCsForDaat) { await updateMentalHP(pc, -20); }
-                    const remainingDaat = attacker.statusEffects.filter(e => !(e.id === 'hitLock' && e.daatBuff));
-                    attacker.statusEffects = remainingDaat;
-                    await updateDoc(doc(db, 'games', gameId, 'characters', attacker.id), { statusEffects: remainingDaat });
-                    await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
-                }
-            } else {
-                await logAction(`💨 명중 판정 실패. (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) 공격은 그대로 적중하지만 추가 행동은 없습니다.`, "system");
-            }
-        }
+        bonusEarned = await performHitRoll(attacker);
 
         // 관통: instant kill if conditions met
         if (skillId === '관통') {
@@ -3298,6 +3884,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     //await logAction(`↩️ ${selectedCharacter.name}이(가) 이동을 취소했습니다.`, "system");
     selectedCharActionPhase = 'MOVE'; // <-- [수정] 이동 단계로 되돌림
     selectedSkill = 'move';
+    skillStep = null;
     render();
 }
     
@@ -3510,6 +4097,13 @@ async function handleLogout() {
     const coordCol = (x) => String.fromCharCode(65 + Number(x));
     const coordRow = (y) => Number(y) + 1;
     const coordLabel = (x, y) => `${coordCol(x)}${coordRow(y)}`;
+    // 상태이상 표시: 이름 + (도발 시전자) + 남은 기간
+    function effectLabel(e) {
+        const who = e.id === 'taunted' && e.casterId ? ` ← ${characters.find(c => c.id === e.casterId)?.name || '?'}` : '';
+        const dur = e.thisRoundOnly ? '이번 라운드' : e.id === 'stunned' ? '다음 차례 1회' : e.id === 'exhausted' ? '다음 라운드 행동 불가'
+            : e.id === 'hitSet' ? '명중 성공 시 해제' : (e.turnsRemaining >= 999 ? (e.id === 'stealth' ? '이동 전까지' : '해제 전까지') : `${e.turnsRemaining}라운드 남음`);
+        return `${e.name}${who} (${dur})`;
+    }
     // 조사 '로/으로': 숫자를 읽었을 때 받침이 ㄹ이 아닌 받침으로 끝나면(3 삼, 6 육, 10 십) '으로'
     const coordTo = (x, y) => coordLabel(x, y) + ([3, 6, 10].includes(coordRow(y)) ? '으로' : '로');
 
@@ -3532,20 +4126,25 @@ async function handleLogout() {
     }
 
      function highlightRange(char, skillId) {
-        document.querySelectorAll('.combat-range').forEach(cell => cell.classList.remove('combat-range', 'attack-range-move', 'attack-range-skill', 'heal-range-skill'));
+        document.querySelectorAll('.combat-range, .skill-target, .move-origin').forEach(cell => cell.classList.remove('combat-range', 'attack-range-move', 'attack-range-skill', 'heal-range-skill', 'skill-target', 'move-origin'));
         
         if (!char || char.x === null || !SKILLS[skillId]) return;
+
+        // 포지션 스킬은 단계별로 고를 수 있는 칸을 따로 표시합니다
+        if (isPositionSkill(skillId) && char.type === 'PC' && skillId !== 'move') {
+            const t = computeSkillTargets(char, skillId);
+            const cls = t.kind === 'attack' ? 'attack-range-skill' : 'heal-range-skill';
+            t.area.forEach(k => { const [x, y] = k.split(','); document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`)?.classList.add('combat-range', cls); });
+            t.clickable.forEach(k => { const [x, y] = k.split(','); document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`)?.classList.add('combat-range', cls, 'skill-target'); });
+            return;
+        }
 
     // skill과 isMove를 여기서 한 번만 선언합니다.
     const skill = SKILLS[skillId];
     const isMove = skill.id === 'move';
 
-    // 속박 상태를 체크합니다.
-    if (isMove && char.statusEffects?.some(e => e.id === 'rooted')) {
-        return; 
-    }
-
-    const range = (skill.id === 'move' && char.moveRange !== undefined) ? char.moveRange : skill.range;
+    // [속박] 상태면 이동력 1
+    const range = isMove ? getMoveRange(char) : skill.range;
     const size = char.size || 1;
     
     const isAttack = skill.category === 'Attack';
@@ -3569,7 +4168,8 @@ async function handleLogout() {
                     }
                 }
             }
-            
+            // 지금 자리도 선택할 수 있음을 표시 (행동 중인 캐릭터만)
+            if (char.id === selectedCharacterId) document.querySelector(`.cell[data-x='${originX}'][data-y='${originY}']`)?.classList.add('move-origin');
 
         } else if (isAttack || isHealOrSupport) {
              // Action range (기존 로직과 동일)
@@ -3790,6 +4390,24 @@ function renderSkillButtons(selectedChar) {
         return;
     }
 
+    // [기절]·[행동 불가]: 이번 차례는 건너뜁니다 (관리자 화면에서는 자동, 본인은 버튼으로)
+    const skipReason = getSkipReason(activeChar);
+    if (skipReason) {
+        skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-yellow-400">${skipReason === 'stunned' ? '💫 [기절]' : '😮‍💨 [포식] 반동'}</h3>
+            <p class="text-sm text-gray-400 mb-3">${activeChar.name}은(는) 이번 차례에 행동할 수 없습니다.</p>
+            <button id="skip-turn-btn" class="w-full p-2 font-bold bg-yellow-700 text-white">차례 넘기기</button>`;
+        document.getElementById('skip-turn-btn').onclick = () => skipTurnForStatus(activeChar);
+        return;
+    }
+
+    if (needsMadnessCheck(activeChar)) {
+        skillControls.innerHTML = `<h3 class="text-lg font-bold mb-2 text-yellow-400">🧠 정신 내구도 0</h3>
+            <p class="text-sm text-gray-400 mb-3">${activeChar.name}은(는) 차례마다 70% 확률로 무작위 아군 1명을 운용력만큼 공격합니다. 판정 후 공격하지 않으면 평소처럼 행동합니다.</p>
+            <button id="madness-check-btn" class="w-full p-2 font-bold bg-yellow-700 text-white">정신 판정</button>`;
+        document.getElementById('madness-check-btn').onclick = (e) => { e.currentTarget.disabled = true; runMadnessCheck(activeChar); };
+        return;
+    }
+
     let html;
     if (isAdmin && loggedInCharId !== activeChar.id) {
         html = `<h3 class="text-lg font-bold mb-2 text-purple-400">👮 ${activeChar.name} 행동 대리</h3>`;
@@ -3800,43 +4418,60 @@ function renderSkillButtons(selectedChar) {
         html += `<p class="text-xs text-yellow-400 mb-1">⚡ 추가행동 사용 중</p>`;
     }
 
-    html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${activeChar.mentalHp}/${activeChar.maxMentalHp}</p>`;
+    html += `<p class="text-sm font-semibold text-blue-400 mb-3">정신: ${activeChar.mentalHp}/${activeChar.maxMentalHp} · 명중률 ${getEffectiveHitPct(activeChar)}%</p>`;
 
     if (selectedCharActionPhase === 'MOVE') {
-        html += `<p class="text-sm text-gray-400">이동할 위치를 선택하세요.</p>`;
+        const rooted = hasEffect(activeChar, 'rooted');
+        html += `<p class="text-sm text-gray-400">이동할 위치를 선택하세요. 이동하지 않으려면 '제자리' 칸(지금 위치)을 누르세요.${rooted ? ' <span class="text-yellow-400">[속박]: 이동력 1</span>' : ''}</p>`;
     } else {
         html += `<div class="flex flex-wrap gap-2">`;
         activeChar.skills.forEach(id => {
             const skill = SKILLS[id];
             if (skill && skill.id !== 'move') {
-                const isHealSupport = skill.category === 'Heal' || skill.category === 'Support';
+                const isHealSupport = skill.category !== 'Attack';
                 const ringColor = isHealSupport ? 'ring-green-400' : 'ring-red-400';
-                const canUse = activeChar.mentalHp >= skill.mpCost;
-                const disabledClass = canUse ? '' : 'opacity-50 cursor-not-allowed';
+                const block = isPositionSkill(id) ? playerSkillBlockReason(activeChar, id) : (activeChar.mentalHp >= skill.mpCost ? null : '정신 부족');
+                const disabledClass = block ? 'opacity-50 cursor-not-allowed' : '';
                 let costParts = [];
                 if (skill.mpCost > 0) costParts.push(`정신 ${skill.mpCost}`);
                 if (skill.multiplier > 0) costParts.push(`운용×${skill.multiplier}`);
-                let costText = costParts.join(' | ');
-                html += `<button data-skill-id="${id}" data-category="${skill.category}" class="skill-btn ${selectedSkill === id ? `ring-2 ${ringColor}` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold ${disabledClass}" ${canUse ? '' : 'disabled'}>
+                const costText = block ? block : costParts.join(' | ');
+                html += `<button data-skill-id="${id}" data-category="${skill.category}" title="${(skill.desc || '').replace(/"/g, '&quot;')}" class="skill-btn ${selectedSkill === id ? `ring-2 ${ringColor}` : ''} text-white p-2 flex items-center flex-col text-xs font-semibold ${disabledClass}" ${block ? 'disabled' : ''}>
                     ${skill.icon} ${skill.name}
                     <span class="text-gray-400 text-xs">${costText ? `[${costText}]` : ''}</span>
                     </button>`;
             }
         });
         html += `</div>`;
-        if (!activeChar.statusEffects?.some(e => e.id === 'rooted')) {
+        const sel = selectedSkill && SKILLS[selectedSkill];
+        if (sel && isPositionSkill(selectedSkill)) {
+            const t = computeSkillTargets(activeChar, selectedSkill);
+            html += `<div class="mt-3 p-3 rounded-md" style="background: var(--bg-tertiary);">
+                <p class="text-sm font-bold mb-1">${sel.icon} ${sel.name}</p>
+                ${sel.desc ? `<p class="text-xs mb-2" style="color: var(--text-secondary);">${sel.desc}</p>` : ''}
+                <p class="text-sm text-yellow-300">${skillStepHint(selectedSkill)}</p>
+                ${!t.instant && t.clickable.size === 0 ? `<p class="text-xs text-red-400 mt-1">지금 선택할 수 있는 대상이 없습니다.</p>` : ''}
+                ${t.instant ? `<button id="cast-skill-btn" class="w-full mt-2 p-2 font-bold bg-green-600 text-white">${sel.icon} ${sel.name} 시전</button>` : ''}
+                <button id="cancel-skill-btn" class="w-full mt-2 p-1 text-sm bg-gray-600 text-white">선택 취소</button>
+            </div>`;
+        }
+        if (!(activeChar.statusEffects || []).some(e => e.id === 'anchored')) {
             html += `<button id="undo-move-btn" class="w-full mt-4 bg-gray-500 hover:bg-gray-600 text-white p-2">↩ 이동 취소</button>`;
         }
     }
     html += `<button id="action-complete-btn" class="w-full mt-4 p-2 font-bold">✔️ 행동 완료</button>`;
     skillControls.innerHTML = html;
     document.getElementById('action-complete-btn').onclick = async () => {
+        await finalizeMove(activeChar);
         await completeActorTurn(activeChar.id, false);
     };
     document.getElementById('undo-move-btn')?.addEventListener('click', undoMove);
+    document.getElementById('cast-skill-btn')?.addEventListener('click', () => runPlayerSkill(activeChar, selectedSkill, {}));
+    document.getElementById('cancel-skill-btn')?.addEventListener('click', () => { selectedSkill = null; skillStep = null; render(); });
     document.querySelectorAll('.skill-btn').forEach(btn => {
         btn.onclick = (e) => {
              selectedSkill = e.currentTarget.dataset.skillId;
+             skillStep = { skillId: selectedSkill, step: 1 };
              render();
         }
     });
@@ -4198,7 +4833,7 @@ function renderLoginStatus() {
                         const iconEl = document.createElement('span');
                         iconEl.className = 'status-effect-icon';
                         iconEl.innerHTML = icon;
-                        iconEl.title = `${effect.name} (${effect.turnsRemaining}턴 남음)`;
+                        iconEl.title = effectLabel(effect);
                         iconEl.style.right = `${-5 + (index * 20)}px`;
                         token.appendChild(iconEl);
                     }
@@ -4233,7 +4868,10 @@ function renderLoginStatus() {
 
     const charForUi = characters.find(c => c.id === selectedCharacterId || c.id === previewCharacterId);
     if (gameState === 'STARTED' && charForUi) {
-        highlightRange(charForUi, selectedSkill || 'move');
+        // 이동할 칸을 고른 뒤(행동 단계)에는 스킬을 고르기 전까지 이동 범위를 다시 보여 주지 않습니다
+        const actingAfterMove = charForUi.id === selectedCharacterId && selectedCharActionPhase === 'ACTION';
+        if (actingAfterMove && !selectedSkill) highlightRange(null, null);
+        else highlightRange(charForUi, selectedSkill || 'move');
     }
 
     renderSkillButtons(charForUi);
@@ -4450,10 +5088,9 @@ mp: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <div class="flex items-center gap-2">
                                             <span class="text-2xl">${STATUS_EFFECT_ICONS[effect.id] || '🔗'}</span>
                                             <div>
-                                                <strong>${effect.name}</strong>
+                                                <strong>${effectLabel(effect)}</strong>
                                                 <small class="block text-gray-400">
-                                                    남은 턴: ${effect.turnsRemaining}
-                                                    ${effect.value ? ` | 값: ${effect.value}` : ''}
+                                                    ${effect.value ? `값: ${effect.value}` : ''}
                                                 </small>
                                             </div>
                                         </div>
@@ -4584,7 +5221,12 @@ async function resetAllCharacterStats() {
                     statusEffects: [],
                     hasActedThisRound: false,
                     isLastFallen: false,
-                    totalDamage: 0
+                    totalDamage: 0,
+                    onceUsedSkillIds: [],
+                    lastSkillId: deleteField(),
+                    madnessCheckedRound: deleteField(),
+                    damageTakenThisRound: 0,
+                    bodyDamageThisRound: 0
                 });
             });
             await batch.commit();
@@ -4812,12 +5454,21 @@ async function handleCombatClick(e) {
             return;
 
         } else if (selectedCharActionPhase === 'ACTION') {
+            // 포지션 스킬: 고를 수 있는 칸이면 대상/칸 선택, 아니면 스킬 선택만 취소
+            if (selectedSkill && isPositionSkill(selectedSkill)) {
+                if (await handlePlayerSkillClick(selectedCharacter, cellX, cellY, clickedChar)) return;
+                selectedSkill = null; skillStep = null;
+                render();
+                return;
+            }
             if (clickedChar && clickedChar.id === selectedCharacter.id) {
                 undoMove();
                 return;
             }
+            if (!selectedSkill) return; // 스킬을 고르지 않은 상태에서 빈 칸 클릭은 무시
             const skill = SKILLS[selectedSkill];
             if (skill && cell.classList.contains('combat-range')) {
+                await finalizeMove(selectedCharacter);
                 const result = await executeSkill(selectedCharacter, (skill.isAoe || !clickedChar ? { x: cellX, y: cellY } : clickedChar), selectedSkill);
                 if (result.gameEnded) { render(); return; }
                 await completeActorTurn(selectedCharacter.id, result.bonus);
@@ -4831,7 +5482,7 @@ async function handleCombatClick(e) {
         }
     } else {
         if (clickedChar && clickedChar.bodyHp > 0) {
-            const isMyTurn = clickedChar.id === currentTurnCharId && clickedChar.type === 'PC' && !clickedChar.hasActedThisRound;
+            const isMyTurn = clickedChar.id === currentTurnCharId && clickedChar.type === 'PC' && !clickedChar.hasActedThisRound && !needsMadnessCheck(clickedChar) && !getSkipReason(clickedChar);
             const canAdminActForPC = isAdmin && isMyTurn;
             const canPlayerSelect = loggedInCharId === clickedChar.id && isMyTurn;
 
@@ -5028,6 +5679,7 @@ loginStatusModal.addEventListener('click', (e) => {
             } else {
                 await logAction(`🏃 ${targetChar.name}이(가) ${coordLabel(oldX, targetChar.y)}에서 ${coordTo(newX, newY)} 이동했습니다.`, "move");
             }
+            if (oldX !== null && gameState === 'STARTED' && (oldX !== newX || targetChar.y !== newY)) await breakStealthOnMove(targetChar);
         } else {
              showCustomModal("배치 오류", "해당 위치는 이미 다른 캐릭터가 차지하고 있거나 장애물입니다.", [{ text: "확인", class: "bg-red-600" }]);
         }

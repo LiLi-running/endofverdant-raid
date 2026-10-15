@@ -1,7 +1,7 @@
 // 레이드 캐릭터 성장 규칙: 포지션 기본치 + 정수 분배
 // 실제로 적용되는 값은 Firestore 의 siteConfig/raidBuild 문서이며, 관리자 설정 페이지에서 바꿀 수 있습니다.
 // 아래 DEFAULT_RAID_BUILD 는 그 문서가 아직 없을 때 관리자 페이지가 처음 만들어 넣는 값입니다.
-import { POSITIONS } from "./raid-data.js";
+import { POSITIONS } from "./raid-data.js?v=2";
 
 // 분배 가능한 항목 (정신 내구도는 포지션 고정값)
 export const BUILD_STATS = [
