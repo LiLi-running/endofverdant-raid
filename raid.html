@@ -3098,12 +3098,12 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     }
 
     // 명중 판정. 성공하면 추가 행동 권한, [명중률 변경] 해제 등을 처리합니다.
-    async function performHitRoll(attacker) {
+    async function performHitRoll(attacker, isAttack = true) {
         const effectiveHitPct = getEffectiveHitPct(attacker);
         const hitRoll = Math.floor(Math.random() * 100) + 1;
         const ok = hitRoll <= effectiveHitPct;
         if (!ok) {
-            await logAction(`💨 명중 판정 실패. (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) 공격은 그대로 적중하지만 추가 행동은 없습니다.`, "system");
+            await logAction(`💨 명중 판정 실패. (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) ${isAttack ? '공격은 그대로 적중하지만' : '스킬 효과는 그대로 적용되지만'} 추가 행동은 없습니다.`, "system");
             return false;
         }
         await logAction(`✅ 명중 판정 성공! (명중률: ${effectiveHitPct}%, 굴림: ${hitRoll}) — ${attacker.name}은 직후 1회 더 행동할 수 있습니다.`, "system");
@@ -3172,7 +3172,8 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
     }
 
     // 정신 내구도 0: 자기 차례에 70% 확률로 무작위 아군 1명을 운용력만큼 공격 (공격하면 그 차례 종료)
-    const needsMadnessCheck = (c) => c && c.type === 'PC' && c.bodyHp > 0 && c.mentalHp <= 0 && c.madnessCheckedRound !== round;
+    // 판정은 차례가 시작될 때의 정신 내구도 기준입니다. 같은 차례의 추가 행동 중에 0이 되어도 판정하지 않습니다.
+    const needsMadnessCheck = (c) => c && c.type === 'PC' && c.bodyHp > 0 && c.mentalHp <= 0 && c.madnessCheckedRound !== round && !activeExtraUsed;
     async function runMadnessCheck(pc) {
         if (!needsMadnessCheck(pc)) return false;
         // 한 차례에 한 번만 판정 (여러 화면에서 동시에 눌러도 한 번)
@@ -3313,15 +3314,12 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         if (skill.mpCost > 0) await updateMentalHP(caster, -skill.mpCost);
         await logAction(`${skill.icon || '✨'} ${caster.name}이(가) [${skill.name}]을(를) 사용합니다.`, "system");
 
-        // ---- 명중 판정 (공격 스킬) ----
-        let bonus = false;
-        if (skill.category === 'Attack') {
-            if (spec.hitSet) {
-                await setOwnEffect(caster, { id: 'hitSet', name: `명중률 ${spec.hitSet}%`, value: spec.hitSet, turnsRemaining: 99 });
-                await logAction(`🎯 ${caster.name}의 명중률이 명중에 성공할 때까지 ${spec.hitSet}%가 됩니다.`, "system");
-            }
-            bonus = await performHitRoll(caster);
+        // ---- 명중 판정 (모든 포지션 스킬. 성공하면 추가 행동) ----
+        if (spec.hitSet) {
+            await setOwnEffect(caster, { id: 'hitSet', name: `명중률 ${spec.hitSet}%`, value: spec.hitSet, turnsRemaining: 99 });
+            await logAction(`🎯 ${caster.name}의 명중률이 명중에 성공할 때까지 ${spec.hitSet}%가 됩니다.`, "system");
         }
+        const bonus = await performHitRoll(caster, skill.category === 'Attack');
 
         // ---- 효과 ----
         const aoeTargets = () => enemiesOf(caster).filter(c => withinRange(caster, c, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
