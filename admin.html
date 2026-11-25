@@ -226,7 +226,7 @@ async function loadRaidGames() {
       .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0) || a.id.localeCompare(b.id));
     if (!games.length) { list.innerHTML = `<p class="muted">게임이 없습니다.</p>`; return; }
     list.innerHTML = games.map(g => `<button class="item text-left w-full ${g.id === gameId ? 'sel' : ''}" data-game="${esc(g.id)}" style="color:var(--text)">
-      <span class="font-mono font-bold flex-1">${esc(g.id)}</span>
+      <span class="flex-1"><span class="font-mono font-bold">${esc(g.id)}</span>${g.roomName ? ` <span class="muted">${esc(g.roomName)}</span>` : ''}</span>
       <span class="badge ${String(g.gameState || 'PREPARATION').toLowerCase()}">${STATE_LABEL[g.gameState] || '준비 단계'}${g.gameState === 'STARTED' ? ` · ${g.round || 1}R` : ''}</span></button>`).join('');
     list.querySelectorAll('[data-game]').forEach(b => b.onclick = () => selectRaidGame(b.dataset.game));
   } catch (e) { console.error(e); list.innerHTML = `<p class="muted">${errMsg(e)}</p>`; }
@@ -239,7 +239,8 @@ $('raid-create-btn').onclick = async () => {
     await setDoc(doc(db, 'games', id), {
       skills: DEFAULT_SKILLS, skillsVersion: PLAYER_SKILLS_VERSION, currentTurnCharId: null, turnQueue: [], activeExtraUsed: false,
       gameState: 'PREPARATION', round: 1, maxRounds: 0, isAdminMoveAllowed: true,
-      boardBackgroundImage: '', pageBackgroundImage: '', createdAt: serverTimestamp()
+      boardBackgroundImage: '', pageBackgroundImage: '', createdAt: serverTimestamp(),
+      roomName: `관리자 레이드 ${id}`, createdBy: uid || null, creatorName: '관리자'
     });
     await setDoc(doc(db, 'games', id, 'board', 'tiles'), { tiles: {} });
     await addDoc(collection(db, 'games', id, 'logs'), { message: '⚔️ 새로운 게임이 시작되었습니다! 게임 로그가 초기화되었습니다.', type: 'system', timestamp: serverTimestamp() });

@@ -5,6 +5,7 @@ rules_version = '2';
 // - 관리자 인증: siteAdmins/{uid} 문서를 올바른 해시로 쓸 수 있어야만 관리자로 인정 (12시간 유지)
 // - 비밀번호는 모두 SHA-256 해시로만 저장 (원래 비밀번호는 저장하지 않음)
 // - 레이드 PC 비밀번호 해시: games/{gameId}/charSecrets/{charId} (관리자만)
+// - 레이드 방 참여자: games/{gameId}/members/{uid} (자기 공유 캐릭터로 등록, 방 진행 권한)
 // - 1:1 캐릭터 비밀번호: duelCharSecrets/{charId} (관리자만 읽기), 본인 확인은 duelClaims 로 증명
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -50,17 +51,45 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // 방 참여자: 자기 공유 캐릭터(비밀번호 증명)로 이 방에 등록한 사람. 방의 진행(적 소환·배치·시작·라운드)을 함께 맡습니다.
+    function isMember(gameId) {
+      return signedIn() && exists(docPath('games/' + gameId + '/members/' + request.auth.uid));
+    }
+
     match /games/{gameId} {
       allow get: if signedIn();
-      allow list: if isAdmin();
-      allow create: if isAdmin() && !('adminPassword' in request.resource.data);
-      // 플레이어는 턴 진행 등 전투 상태만 바꿀 수 있고, 게임 상태는 '종료'로만 바꿀 수 있습니다.
+      // 레이드 목록: 누구나 방 목록을 볼 수 있습니다.
+      allow list: if signedIn();
+      // 관리자, 또는 캐릭터가 있는 사람(자기 캐릭터로 참여자 등록을 함께 해야 함)이 새 방을 만듭니다.
+      allow create: if (isAdmin() && !('adminPassword' in request.resource.data))
+        || (signedIn()
+            && !('adminPassword' in request.resource.data)
+            && request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.gameState == 'PREPARATION'
+            && request.resource.data.creatorCharId is string
+            && isDuelOwner(request.resource.data.creatorCharId)
+            && existsAfter(docPath('games/' + gameId + '/members/' + request.auth.uid)));
+      // 참여자는 방 설정과 진행 상태를 모두 바꿀 수 있습니다. 그 밖의 사람은 전투 상태만, 게임 상태는 '종료'로만.
       allow update: if (signedIn()
           && !changedKeys().hasAny(['skills', 'maxRounds', 'isAdminMoveAllowed',
-                                    'boardBackgroundImage', 'pageBackgroundImage', 'adminPassword'])
+                                    'boardBackgroundImage', 'pageBackgroundImage', 'adminPassword',
+                                    'createdBy', 'creatorCharId', 'roomName'])
           && (!changedKeys().hasAny(['gameState']) || request.resource.data.gameState == 'ENDED'))
+        || (isMember(gameId) && !changedKeys().hasAny(['adminPassword', 'createdBy', 'creatorCharId']))
         || (isAdmin() && (!('adminPassword' in request.resource.data) || !changedKeys().hasAny(['adminPassword'])));
-      allow delete: if isAdmin();
+      // 방은 관리자 또는 방을 만든 사람이 삭제합니다.
+      allow delete: if isAdmin() || (signedIn() && resource.data.createdBy == request.auth.uid);
+
+      // 참여자 등록: 문서 ID = 자기 uid, 자기 공유 캐릭터로만 (lastSeen 은 접속 표시용)
+      match /members/{memberUid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && memberUid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['charId', 'name', 'at', 'lastSeen'])
+          && request.resource.data.charId is string
+          && request.resource.data.name is string && request.resource.data.name.size() <= 40
+          && isDuelOwner(request.resource.data.charId);
+        allow delete: if (signedIn() && memberUid == request.auth.uid) || isAdmin();
+      }
 
       // 플레이어가 자기 공유 캐릭터로 직접 참가 (준비 단계에서만, 문서 ID = 공유 캐릭터 ID, 스탯은 성장 규칙대로)
       function playerJoinOk(charId) {
@@ -88,16 +117,19 @@ service cloud.firestore {
       match /characters/{charId} {
         allow read: if signedIn();
         allow create: if isAdmin()
+          || (isMember(gameId) && !('password' in request.resource.data) && !('sharedCharId' in request.resource.data))
           || (signedIn() && request.resource.data.type == 'ENEMY' && !('password' in request.resource.data))
           || (signedIn() && playerJoinOk(charId));
         allow update: if (signedIn()
             && !changedKeys().hasAny(['name', 'type', 'imageUrl', 'position', 'skills', 'size',
                                       'maxBodyHp', 'maxMentalHp', 'maxHp', 'maxMp',
                                       'defPct', 'hitPct', 'speed', 'moveRange', 'turnOrder',
-                                      'isBoss', 'stunImmune', 'stunImmuneAfterOne', 'password', 'sharedCharId']))
+                                      'isBoss', 'stunImmune', 'stunImmuneAfterOne', 'password', 'sharedCharId', 'isNpc']))
+          || (isMember(gameId) && !changedKeys().hasAny(['password', 'sharedCharId']))
           || (isAdmin() && (!('password' in request.resource.data) || !changedKeys().hasAny(['password'])));
         // 관리자, 또는 준비 단계에서 자기 공유 캐릭터의 참가 취소
         allow delete: if isAdmin()
+          || (isMember(gameId) && !('sharedCharId' in resource.data))
           || (signedIn() && resource.data.sharedCharId == charId && isDuelOwner(charId)
               && get(docPath('games/' + gameId)).data.gameState == 'PREPARATION');
       }
@@ -133,15 +165,26 @@ service cloud.firestore {
           && pcPasswordOk(request.resource.data.charId, request.resource.data.hash);
       }
 
-      match /board/{docId} {
+      // 자동 진행 담당(driver)·자동 행동 예고(preview) 같은 실시간 상태
+      match /runtime/{docId} {
         allow read: if signedIn();
-        allow write: if isAdmin();
+        allow write: if isAdmin() || isMember(gameId);
       }
 
+      match /board/{docId} {
+        allow read: if signedIn();
+        allow write: if isAdmin() || isMember(gameId);
+      }
+
+      // 게임 기록과 채팅(type 'chat', 보낸 사람 uid 가 자기 것일 때만)
       match /logs/{logId} {
-        allow read, create: if signedIn();
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && (!('type' in request.resource.data) || request.resource.data.type != 'chat'
+              || (request.resource.data.uid == request.auth.uid
+                  && request.resource.data.message is string && request.resource.data.message.size() <= 300));
         allow update: if false;
-        allow delete: if isAdmin();
+        allow delete: if isAdmin() || isMember(gameId);
       }
 
       match /combatEvents/{eventId} {
