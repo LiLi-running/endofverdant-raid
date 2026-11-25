@@ -1051,6 +1051,7 @@
 /* ===================== 2026-11 레이아웃 개편 ===================== */
 body.raid-page { min-height: 100vh; margin: 0; }
 .raid-site-header { position: sticky; top: 0; z-index: 45; }
+body.raid-page .modal { z-index: 115; }
 .raid-site-header .brand, .raid-site-header h1, .raid-site-header nav { font-family: 'Pretendard', 'Noto Sans KR', sans-serif; letter-spacing: 0; }
 .raid-site-header .brand { font-family: 'Black Han Sans', 'Pretendard', sans-serif; }
 .lobby-main button, .lobby-main a, .modal-box, .modal-box button, .raid-layout { font-family: 'Pretendard', 'Noto Sans KR', sans-serif; letter-spacing: 0; }
@@ -1165,6 +1166,8 @@ body.raid-page { min-height: 100vh; margin: 0; }
 /* 스킬 ? 도움말 */
 .skill-wrap { display: inline-flex; align-items: stretch; }
 .skill-wrap .skill-btn { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+.skill-btn, .skill-btn.text-white { color: var(--text) !important; }
+.skill-btn[disabled] { color: var(--text-3) !important; }
 .skill-help-btn { padding: 0 7px !important; border-radius: 0 8px 8px 0 !important; font-weight: 800; font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-2); }
 .skill-help-pop { position: fixed; z-index: 130; width: 300px; max-width: calc(100vw - 24px); background: var(--panel-solid); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.55; font-family: 'Pretendard', sans-serif; letter-spacing: 0; }
 .skill-help-pop h4 { margin: 0 0 4px; font-size: 15px; font-weight: 800; display: flex; justify-content: space-between; gap: 8px; }
@@ -2485,11 +2488,13 @@ function listenForCombatTextEvents(gameId) {
     async function maybeRunAutomation() {
         if (!gameId || automationBusy || !isDriver() || gameState !== 'STARTED') return;
         if (!currentTurnCharId) {
-            // 속도가 같은 캐릭터가 모두 자동 행동(적·자동 NPC)이면 담당 브라우저가 순서를 정합니다
-            const tied = getEligibleActorIds().map(id => characters.find(c => c.id === id));
-            if (tied.length > 1 && tied.every(isAutomatedActor)) {
+            // 속도가 같은 캐릭터 중 적·자동 NPC가 있으면 담당 브라우저가 그들부터 자동으로 순서를 정합니다
+            // (적 → 자동 NPC 순, 같은 종류끼리는 이번 라운드 순서표 순). 사람이 조작하는 캐릭터끼리만 남으면 직접 고릅니다.
+            const tied = getEligibleActorIds().map(id => characters.find(c => c.id === id)).filter(Boolean);
+            const autos = tied.filter(isAutomatedActor).sort((a, b) => (a.type === 'ENEMY' ? 0 : 1) - (b.type === 'ENEMY' ? 0 : 1) || turnQueue.indexOf(a.id) - turnQueue.indexOf(b.id));
+            if (tied.length > 1 && autos.length) {
                 const key = `pick:${round}:${tied.map(c => c.id).join(',')}`;
-                if (!automationDone.has(key)) { automationDone.add(key); await setActiveChar(tied[0].id); }
+                if (!automationDone.has(key)) { automationDone.add(key); await setActiveChar(autos[0].id); }
             }
             return;
         }
@@ -4997,6 +5002,10 @@ function renderSkillButtons(selectedChar) {
     const eligibleIds = getEligibleActorIds();
     if (!currentTurnCharId && eligibleIds.length > 1) {
         const eligibleChars = eligibleIds.map(id => characters.find(c => c.id === id)).filter(Boolean);
+        if (eligibleChars.some(isAutomatedActor)) {
+            skillControls.innerHTML = `<h3 class="text-base font-bold" style="color:var(--warn)">⚖️ 동시 속도</h3><p class="text-sm" style="color:var(--text-2)">${eligibleChars.map(c => escHtml(c.name)).join(', ')}의 속도가 같습니다. 적·자동 NPC부터 자동으로 순서를 정합니다...</p>`;
+            return;
+        }
         let html = `<h3 class="text-lg font-bold mb-2 text-yellow-400">⚖️ 동시 속도</h3>`;
         html += `<p class="text-sm text-gray-400 mb-3">아래 캐릭터들의 속도가 같습니다. 상의하여 먼저 행동할 캐릭터를 고르세요. (선택 후 번복 불가)</p>`;
         html += `<div class="flex flex-wrap gap-2">`;
