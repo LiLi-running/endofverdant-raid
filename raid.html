@@ -2661,7 +2661,7 @@ function listenForCombatTextEvents(gameId) {
         const clickable = charsInCells(t.clickable).filter(c => c.type === ph.type ? true : true);
         switch (skillId) {
             case '의지': case '살상': case '속박': {
-                const ts = enemiesOf(ph).filter(e => withinRange(ph, e, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
+                const ts = enemiesOf(ph).filter(e => !isStealthed(e) && withinRange(ph, e, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
                 if (!ts.length) break;
                 const n = ts.length;
                 const per = skillId === '살상' ? op * 2 + n * 2 : op * 3;
@@ -2853,7 +2853,7 @@ function listenForCombatTextEvents(gameId) {
         const tauntEffect = (enemy.statusEffects || []).find(e => e.id === 'taunted' && e.casterId);
         if (!tauntEffect) return null;
         const taunter = characters.find(c => c.id === tauntEffect.casterId);
-        return (taunter && taunter.type !== enemy.type && taunter.bodyHp > 0 && taunter.x !== null) ? taunter : null;
+        return (taunter && taunter.type !== enemy.type && taunter.bodyHp > 0 && taunter.x !== null && !isStealthed(taunter)) ? taunter : null;
     }
 
     function findNearestEnemyTarget(enemy) {
@@ -2897,7 +2897,7 @@ function listenForCombatTextEvents(gameId) {
             return;
         }
         const skill = SKILLS[attackSkillId];
-        const allyTargets = characters.filter(c => c.type === 'PC' && c.id !== pc.id && c.bodyHp > 0 && c.x !== null);
+        const allyTargets = characters.filter(c => c.type === 'PC' && c.id !== pc.id && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         if (allyTargets.length === 0) {
             await logAction(`...공격할 아군이 없어 ${pc.name}의 혼란 행동을 종료합니다.`, "system");
             await completeActorTurn(pc.id, false);
@@ -3080,8 +3080,11 @@ function listenForCombatTextEvents(gameId) {
         }
 
         const updatedTarget = characters.find(c => c.id === target.id);
-        if (updatedTarget && updatedTarget.bodyHp > 0 && isAttackPossible(currentEnemy, updatedTarget, attackRange)) {
-            await showActionPreview({ actorId: currentEnemy.id, kind: 'skill', ...predictEnemySkill(currentEnemy, updatedTarget, attackSkillId) });
+        const pred = updatedTarget ? predictEnemySkill(currentEnemy, updatedTarget, attackSkillId) : null;
+        // 광역인데 맞힐 대상이 없으면 (모두 [은폐] 등) 공격하지 않습니다
+        const aoeEmpty = skill.isAoe && pred && pred.targetIds.length === 0;
+        if (updatedTarget && updatedTarget.bodyHp > 0 && !aoeEmpty && isAttackPossible(currentEnemy, updatedTarget, attackRange)) {
+            await showActionPreview({ actorId: currentEnemy.id, kind: 'skill', ...pred });
             const result = await executeSkill(currentEnemy, characters.find(c => c.id === updatedTarget.id) || updatedTarget, attackSkillId);
             await delay(800);
             return result.bonus;
@@ -3279,7 +3282,8 @@ function isAttackPossible(attacker, target, attackRange) {
             
             // Standard damage/heal targeting
             if ((skillType === 'Heal' || skillType === 'Support') && isAlly && char.bodyHp > 0) isEligible = true;
-            if (skillType !== 'Heal' && skillType !== 'Support' && isEnemy && char.bodyHp > 0) isEligible = true;
+            // [은폐] 상태인 상대는 광역 공격에도 맞지 않습니다
+            if (skillType !== 'Heal' && skillType !== 'Support' && isEnemy && char.bodyHp > 0 && !isStealthed(char)) isEligible = true;
             
             // Special case for Resurrect
             const skill = SKILLS[selectedSkill];
@@ -3420,7 +3424,7 @@ function isAttackPossible(attacker, target, attackRange) {
 
     // 가오케레나 - خانه بوروکاشا: 아군 전체 정신 50 감소, 저잔량자 수만큼 운용력 영구 상승
     if (skillId === 'خانه بوروکاشا') {
-        const livingPCsA = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+        const livingPCsA = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         let countLow = 0;
         for (const pc of livingPCsA) {
             const newMental = await updateMentalHP(pc, -50);
@@ -3437,7 +3441,7 @@ function isAttackPossible(attacker, target, attackRange) {
 
     // 가오케레나 - لانه سیمرغ: 최원거리 아군 정신 10으로 설정, 5마스 내 전원 명중률 1% 고정
     if (skillId === 'لانه سیمرغ') {
-        const livingPCsB = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+        const livingPCsB = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
         if (livingPCsB.length > 0) {
             const farthestPC = [...livingPCsB].sort((a, b) => getDistance(caster, b) - getDistance(caster, a))[0];
             await updateDoc(doc(db, 'games', gameId, 'characters', farthestPC.id), { mentalHp: 10, mp: 10 });
@@ -3482,7 +3486,7 @@ function isAttackPossible(attacker, target, attackRange) {
         if (available.length === 0) { await logAction(`⚠️ [לְהִתְפַּלֵל] 사용할 스킬이 없습니다.`, "system"); return false; }
         const chosenSkillId = available[Math.floor(Math.random() * available.length)];
         await logAction(`🙏 [לְהִתְפַּלֵל] ${caster.name}: [${chosenSkillId}]을(를) 대신 사용합니다!`, "system");
-        const fallbackTarget = characters.find(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null) || caster;
+        const fallbackTarget = characters.find(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c)) || caster;
         await executeSkill(caster, fallbackTarget, chosenSkillId);
         return true;
     }
@@ -3877,7 +3881,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         }
         const daatEffect = attacker.statusEffects?.find(e => e.id === 'hitLock' && e.daatBuff);
         if (daatEffect) {
-            for (const pc of characters.filter(c => c.type === 'PC' && livingPlaced(c))) { await updateMentalHP(pc, -20); }
+            for (const pc of characters.filter(c => c.type === 'PC' && livingPlaced(c) && !isStealthed(c))) { await updateMentalHP(pc, -20); }
             await removeEffects(attacker, e => e.id === 'hitLock' && e.daatBuff);
             await logAction(`📖 [דָּעַת] ${attacker.name}의 명중으로 아군 전체 정신 내구도 20 감소! 명중률이 원래대로 돌아옵니다.`, "damage");
         }
@@ -4083,7 +4087,8 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         const bonus = await performHitRoll(caster, skill.category === 'Attack');
 
         // ---- 효과 ----
-        const aoeTargets = () => enemiesOf(caster).filter(c => withinRange(caster, c, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
+        // 광역 스킬도 [은폐] 상태인 적은 맞히지 않습니다
+        const aoeTargets = () => enemiesOf(caster).filter(c => !isStealthed(c) && withinRange(caster, c, skill.aoeRange || 0, skill.aoeShape || 'diamond'));
         switch (skillId) {
             case '지탱': {
                 const n = alliesOf(caster).filter(c => withinRange(caster, c, 2)).length; // 시전자 본인 포함
@@ -4388,7 +4393,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         }
 
         if (skillId === "k'alik") {
-            const livingPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            const livingPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
             const farthest = [...livingPCs1].sort((a, b) => getDistance(attacker, b) - getDistance(attacker, a)).slice(0, 2);
             if (farthest.length === 0) { await logAction(`⚠️ [k'alik] 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
             for (const t of farthest) { await applyStatusEffect(t, { id: 'rooted', turns: 1 }, attacker.id); }
@@ -4462,7 +4467,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             const dmg5 = Math.round(getEffectiveOp(attacker) * 3);
             await updateBodyHP(chosen4, -dmg5, "damage");
             await updateMentalHP(chosen4, -30);
-            const livingPCs2 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            const livingPCs2 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
             const swapWith = [...livingPCs2].sort((a, b) => a.mentalHp - b.mentalHp).find(c => c.id !== chosen4.id);
             let msg1 = `🔄 [Bábák varázsa] ${attacker.name}: ${chosen4.name}에게 ${dmg5} 피해, 정신 내구도 30 감소.`;
             if (swapWith) {
@@ -4502,7 +4507,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
             let msg2 = `☁️ ${attacker.name}: ${chosen6.name}에게 신체 ${dmg6} 피해!`;
             if (dmg6 >= 60) {
                 await updateMentalHP(chosen6, -50);
-                const allPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+                const allPCs1 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
                 for (const pc of allPCs1) {
                     await updateBodyHP(pc, -op2, "damage");
                     await updateMentalHP(pc, -op2);
@@ -4552,7 +4557,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
         }
 
         if (skillId === 'נְחֻשְׁתָּן') {
-            const livingPCs4 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null);
+            const livingPCs4 = characters.filter(c => c.type === 'PC' && c.bodyHp > 0 && c.x !== null && !isStealthed(c));
             if (livingPCs4.length === 0) { await logAction(`⚠️ 대상이 없습니다.`, "system"); return { success: false, bonus: false }; }
             const op4 = getEffectiveOp(attacker);
             const dmgEach = Math.round(op4 * 3);
@@ -6459,7 +6464,7 @@ loginStatusModal.addEventListener('click', (e) => {
         let text;
         switch (spec.mode) {
             case 'self': text = ['정화', '개화'].includes(skillId) ? '즉시 시전. 배치된 아군 전원에게 적용됩니다.' : '즉시 시전. 자신에게 적용됩니다.'; break;
-            case 'selfAoe': text = `즉시 시전. 시전자를 중심으로 ${aoe}마스 안의 적 전원 (아군은 맞지 않음).`; break;
+            case 'selfAoe': text = `즉시 시전. 시전자를 중심으로 ${aoe}마스 안의 적 전원 (아군과 [은폐] 상태인 적은 맞지 않음).`; break;
             case 'enemy': text = `${r}마스 안의 적 1체${spec.canTargetStealth ? ' ([은폐] 상태도 지정 가능)' : ''}.`; break;
             case 'ally': text = spec.unlimited ? `거리와 관계없이 아군 1명${spec.allowSelf ? ' (자신 포함)' : ''}.` : `${r}마스 안의 아군 1명 ${spec.allowSelf ? '(자신 포함)' : '(자신 제외)'}.`; break;
             case 'enemyThenCell': text = `① ${r}마스 안의 적 1체를 고르고 ② 그 적에게 붙은 칸(지금 자리 포함)으로 이동한 뒤 공격합니다.`; break;
