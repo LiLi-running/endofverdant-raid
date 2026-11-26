@@ -1805,9 +1805,9 @@ const loginStatusModal = document.getElementById('login-status-modal');
                 await setDoc(doc(db, 'games', code), gameData);
             } catch (e) {
                 console.error('방 문서 만들기 실패', e);
-                err.textContent = denied(e)
+                err.textContent = (denied(e)
                     ? '캐릭터 확인은 통과했지만 방을 만들 권한이 없습니다. Firebase 콘솔의 Firestore 규칙에 최신 firestore.rules를 게시했는지 확인해 주세요.'
-                    : '방을 만드는 중 오류가 발생했습니다.';
+                    : '방을 만드는 중 오류가 발생했습니다.') + ` [${e?.code || 'unknown'}: ${String(e?.message || '').slice(0, 160)}]`;
                 return;
             }
             await setDoc(doc(db, 'games', code, 'board', 'tiles'), { tiles: {} });
