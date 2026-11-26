@@ -4774,7 +4774,7 @@ async function applyStatusEffect(target, effectInfo, casterId = null) {
                 document.getElementById('raid-join-modal').classList.add('hidden');
             } catch (e) {
                 console.error(e);
-                err.textContent = e?.code === 'permission-denied' ? '참가할 수 없습니다. 준비 단계인지, 레이드 설정이 현재 규칙에 맞는지 확인하세요.' : '오류가 발생했습니다.';
+                err.textContent = (e?.code === 'permission-denied' ? '참가할 수 없습니다. 준비 단계인지, 레이드 설정이 현재 규칙에 맞는지 확인하세요.' : '오류가 발생했습니다.') + ` [${e?.code || 'unknown'}]`;
                 b.disabled = false;
             }
         });
