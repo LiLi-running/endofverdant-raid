@@ -1230,6 +1230,7 @@ body.raid-page .modal { z-index: 115; }
         <div class="field"><label for="room-name-input">방 이름</label><input id="room-name-input" maxlength="40" placeholder="예: 시카모어 공략"></div>
         <div class="field"><label for="room-char-select">내 캐릭터</label><select id="room-char-select"></select></div>
         <label class="toggle-line"><input type="checkbox" id="room-join-as-pc" checked> 이 캐릭터로 바로 참가 (레이드 설정이 있어야 합니다)</label>
+        <div class="field hidden" id="room-char-pw-field"><label for="room-char-pw">캐릭터 비밀번호</label><input id="room-char-pw" type="password" autocomplete="current-password" placeholder="이 캐릭터의 비밀번호"></div>
         <p class="muted" id="room-create-help"></p>
         <p class="error" id="room-create-error"></p>
         <div class="actions"><button id="room-create-cancel" class="btn-ghost">취소</button><button id="room-create-ok" class="btn-primary">만들기</button></div>
@@ -1733,6 +1734,8 @@ const loginStatusModal = document.getElementById('login-status-modal');
         const err = document.getElementById('room-create-error');
         const help = document.getElementById('room-create-help');
         err.textContent = ''; help.textContent = '';
+        document.getElementById('room-char-pw-field').classList.add('hidden');
+        document.getElementById('room-char-pw').value = '';
         sel.innerHTML = '<option>불러오는 중...</option>';
         modal.classList.add('open');
         try { createRoomData = await loadMySharedChars(); } catch (e) { console.error(e); createRoomData = { chars: [], build: DEFAULT_RAID_BUILD }; }
@@ -1760,10 +1763,36 @@ const loginStatusModal = document.getElementById('login-status-modal');
         if (!asAdmin && !char) { err.textContent = '캐릭터를 고르세요.'; return; }
         const roomName = (document.getElementById('room-name-input').value || '').trim().slice(0, 40) || `${char?.name || '관리자'}의 레이드`;
         okBtn.disabled = true;
+        const denied = (e) => e?.code === 'permission-denied';
         try {
             let code = generateGameId();
             for (let i = 0; i < 5 && (await getDoc(doc(db, 'games', code))).exists(); i++) code = generateGameId();
-            const batch = writeBatch(db);
+            if (char) {
+                // ① 비밀번호를 다시 입력했다면 이 기기의 캐릭터 등록을 새로 만듭니다
+                const pwField = document.getElementById('room-char-pw-field');
+                const pw = document.getElementById('room-char-pw').value;
+                if (!pwField.classList.contains('hidden') && pw) {
+                    try {
+                        await setDoc(doc(db, 'duelClaims', `${userId}_${char.id}`), { uid: userId, charId: char.id, hash: await charPasswordHash(char.id, pw), at: serverTimestamp() });
+                    } catch (e) {
+                        err.textContent = denied(e) ? '비밀번호가 맞지 않습니다.' : '캐릭터 등록을 갱신하지 못했습니다.';
+                        return;
+                    }
+                }
+                // ② 참여자 등록 = 캐릭터 주인 확인
+                try {
+                    await setDoc(doc(db, 'games', code, 'members', userId), { charId: char.id, name: char.name, at: serverTimestamp(), lastSeen: Date.now() });
+                } catch (e) {
+                    console.error('참여자 등록 실패', e);
+                    if (denied(e)) {
+                        pwField.classList.remove('hidden');
+                        document.getElementById('room-char-pw').focus();
+                        err.textContent = '이 기기에 저장된 캐릭터 등록이 지금 비밀번호와 맞지 않습니다. (관리자가 비밀번호를 재설정했거나, 예전 방식 등록일 수 있습니다.) 캐릭터 비밀번호를 입력하고 다시 만들기를 누르세요.';
+                    } else err.textContent = '참여자 등록 중 오류가 발생했습니다.';
+                    return;
+                }
+            }
+            // ③ 방 만들기
             const gameData = {
                 skills: DEFAULT_SKILLS, skillsVersion: PLAYER_SKILLS_VERSION,
                 currentTurnCharId: null, turnQueue: [], activeExtraUsed: false,
@@ -1772,9 +1801,15 @@ const loginStatusModal = document.getElementById('login-status-modal');
                 roomName, createdBy: userId, creatorName: char ? char.name : '관리자', createdAt: serverTimestamp(),
             };
             if (char) gameData.creatorCharId = char.id;
-            batch.set(doc(db, 'games', code), gameData);
-            if (char) batch.set(doc(db, 'games', code, 'members', userId), { charId: char.id, name: char.name, at: serverTimestamp(), lastSeen: Date.now() });
-            await batch.commit();
+            try {
+                await setDoc(doc(db, 'games', code), gameData);
+            } catch (e) {
+                console.error('방 문서 만들기 실패', e);
+                err.textContent = denied(e)
+                    ? '캐릭터 확인은 통과했지만 방을 만들 권한이 없습니다. Firebase 콘솔의 Firestore 규칙에 최신 firestore.rules를 게시했는지 확인해 주세요.'
+                    : '방을 만드는 중 오류가 발생했습니다.';
+                return;
+            }
             await setDoc(doc(db, 'games', code, 'board', 'tiles'), { tiles: {} });
             await addDoc(collection(db, 'games', code, 'logs'), { message: `⚔️ 새 레이드 방 '${escHtml(roomName)}'이(가) 열렸습니다.`, type: 'system', timestamp: serverTimestamp() });
             document.getElementById('create-room-modal').classList.remove('open');
@@ -1789,7 +1824,7 @@ const loginStatusModal = document.getElementById('login-status-modal');
             }
         } catch (e) {
             console.error('방 만들기 실패', e);
-            err.textContent = e?.code === 'permission-denied' ? '방을 만들 수 없습니다. 캐릭터 비밀번호 확인(캐릭터 페이지에서 불러오기)이 필요하거나, 보안 규칙이 최신이 아닙니다.' : '오류가 발생했습니다.';
+            err.textContent = denied(e) ? '권한이 없어 방을 만들지 못했습니다. 최신 firestore.rules를 게시했는지 확인해 주세요.' : '오류가 발생했습니다.';
         } finally { okBtn.disabled = false; }
     }
 
