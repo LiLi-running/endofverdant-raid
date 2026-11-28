@@ -109,26 +109,27 @@
 <script type="module">
 import { doc, collection, writeBatch, deleteDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { db, onReady, $, esc, safeUrl, money, toast, openModal, closeModal, avatarHtml, statChips, errMsg,
-         watchCharacters, watchMyCharIds, watchWallets, claimCharacter, ensureWallets } from "./common.js?v=2";
+         watchCharacters, watchMyCharIds, watchWallets, claimCharacter, ensureWallets, askCharPassword } from "./common.js?v=3";
 import { BASE_HP, STAT_LIMITS, TOTAL_MIN, TOTAL_MAX, statTotal, validateStats, tag } from "./duel-rules.js";
 import { newWallet, effectiveDaily, spinsLeft } from "./seomjeon-rules.js?v=2";
 import { charPasswordHash } from "./password-hash.js";
 import { DEFAULT_RAID_BUILD, BUILD_STATS, BASE_STATS, POSITION_ORDER, emptyPoints, pointsUsed, finalValue, canAdd, validateRaid } from "./raid-build.js";
 
-let uid = null, allChars = {}, myIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
+let uid = null, allChars = {}, myIds = new Set(), staleIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
 let build = DEFAULT_RAID_BUILD, buildReady = false;
 
 onReady((u) => {
   uid = u;
   watchCharacters(c => { allChars = c; charsLoaded = true; render(); });
-  watchMyCharIds(uid, s => { myIds = s; render(); });
+  watchMyCharIds(uid, (s, st) => { myIds = s; staleIds = st; render(); });
   watchWallets(w => { wallets = w; walletsLoaded = true; render(); });
   onSnapshot(doc(db, 'siteConfig', 'raidBuild'), snap => { if (snap.exists()) { build = snap.data(); buildReady = true; } render(); }, () => {});
 });
 
 // ---------- 레이드 설정 ----------
 let raidEditing = null; // { id, position, points }
-function openRaidEditor(id) {
+async function openRaidEditor(id) {
+  if (staleIds.has(id) && !(await askCharPassword(uid, allChars[id]))) return;
   const c = allChars[id];
   raidEditing = { id, position: c.raid?.position || null, points: { ...emptyPoints(), ...(c.raid?.points || {}) } };
   $('raid-modal-title').textContent = `${c.name} · 레이드 설정`;
@@ -179,12 +180,14 @@ function render() {
     return `<div class="char-card">
       ${avatarHtml(c)}
       <div style="min-width:0"><div class="name">${esc(c.name)}</div><div class="chips">${statChips(c)}</div><div class="chips">${wallet}</div>
-        <div class="raid-summary">${c.raid ? `레이드: <b>${esc(c.raid.position)}</b> · 정수 ${pointsUsed(c.raid.points)}/${build.points} 사용` : '레이드 설정 전'}</div></div>
+        <div class="raid-summary">${c.raid ? `레이드: <b>${esc(c.raid.position)}</b> · 정수 ${pointsUsed(c.raid.points)}/${build.points} 사용` : '레이드 설정 전'}</div>
+        ${staleIds.has(c.id) ? `<div class="raid-summary" style="color:var(--warn)">⚠ 다른 기기에서 비밀번호가 바뀌었습니다. <button class="btn-ghost" style="padding:3px 10px;font-size:12px" data-reclaim="${esc(c.id)}">비밀번호 입력</button></div>` : ''}</div>
       <div class="acts"><button class="btn-ghost" data-edit="${esc(c.id)}">수정</button><button class="btn-ghost" data-raid="${esc(c.id)}">레이드</button><a class="btn-primary" style="text-align:center" href="seomjeon.html?char=${encodeURIComponent(c.id)}">섬전</a></div>
     </div>`;
   }).join('');
   list.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openEditor(b.dataset.edit));
   list.querySelectorAll('[data-raid]').forEach(b => b.onclick = () => openRaidEditor(b.dataset.raid));
+  list.querySelectorAll('[data-reclaim]').forEach(b => b.onclick = () => askCharPassword(uid, allChars[b.dataset.reclaim]));
 }
 
 // ---------- 편집기 ----------
@@ -211,7 +214,8 @@ $('c-image').oninput = () => {
   const url = safeUrl($('c-image').value.trim()), img = $('c-image-preview');
   if (url) { img.src = url; img.classList.remove('hidden'); } else img.classList.add('hidden');
 };
-function openEditor(id = null) {
+async function openEditor(id = null) {
+  if (id && staleIds.has(id) && !(await askCharPassword(uid, allChars[id]))) return;
   const c = id ? allChars[id] : null;
   editing = c ? { id, hpInvest: c.hpInvest, power: c.power, guard: c.guard } : { id: null, hpInvest: 3, power: 3, guard: 3 };
   $('char-modal-title').textContent = c ? '캐릭터 수정' : '캐릭터 만들기';

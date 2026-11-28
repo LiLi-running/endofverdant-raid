@@ -51,11 +51,69 @@ export function watchCharacters(cb) {
     const all = {}; snap.docs.forEach(d => { all[d.id] = { id: d.id, ...d.data() }; }); cb(all);
   }, e => console.error('캐릭터 목록 오류', e));
 }
+// 다른 기기에서 비밀번호를 바꾸면 이 기기의 등록(해시)은 더 이상 맞지 않습니다.
+// 페이지를 열 때 등록을 같은 값으로 한 번 다시 써 보고, 거절되면 '비밀번호 확인 필요'로 표시합니다.
+const claimCheck = new Map(); // `${claimId}:${hash}` -> 'checking' | 'ok' | 'stale'
 export function watchMyCharIds(uid, cb) {
+  let lastDocs = [];
+  const emit = () => {
+    const ids = new Set(), stale = new Set();
+    for (const d of lastDocs) {
+      const c = d.data();
+      ids.add(c.charId);
+      if (claimCheck.get(`${d.id}:${c.hash}`) === 'stale') stale.add(c.charId);
+    }
+    cb(ids, stale);
+  };
   return onSnapshot(query(collection(db, 'duelClaims'), where('uid', '==', uid)), snap => {
     migrateLegacyClaims(db, uid, snap.docs, { doc, writeBatch, setDoc, deleteDoc, serverTimestamp });
-    cb(new Set(snap.docs.map(d => d.data().charId)));
+    lastDocs = snap.docs;
+    for (const d of snap.docs) {
+      const c = d.data(), key = `${d.id}:${c.hash}`;
+      if (!c.hash || claimCheck.has(key)) continue;
+      claimCheck.set(key, 'checking');
+      setDoc(doc(db, 'duelClaims', d.id), { uid, charId: c.charId, hash: c.hash, at: c.at ?? serverTimestamp() })
+        .then(() => claimCheck.set(key, 'ok'))
+        .catch(e => { if (e?.code === 'permission-denied') { claimCheck.set(key, 'stale'); emit(); } else claimCheck.delete(key); });
+    }
+    emit();
   }, e => console.error('내 캐릭터 오류', e));
+}
+
+/** 비밀번호가 바뀐 캐릭터를 이 기기에서 다시 확인합니다. 성공하면 true. */
+export function askCharPassword(uid, char) {
+  let m = document.getElementById('reclaim-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'reclaim-modal'; m.className = 'modal';
+    m.innerHTML = `<div class="modal-box">
+      <h3 id="reclaim-title">비밀번호 확인</h3>
+      <p class="muted" id="reclaim-help"></p>
+      <div class="field"><label for="reclaim-password">캐릭터 비밀번호</label><input id="reclaim-password" type="password" autocomplete="current-password"></div>
+      <p class="error" id="reclaim-error"></p>
+      <div class="actions"><button id="reclaim-cancel" class="btn-ghost">취소</button><button id="reclaim-ok" class="btn-primary">확인</button></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  $('reclaim-title').textContent = `${char?.name || '캐릭터'} 비밀번호 확인`;
+  $('reclaim-help').textContent = '다른 기기에서 비밀번호가 바뀌어 이 기기의 등록이 더 이상 맞지 않습니다. 지금 비밀번호를 입력하면 다시 쓸 수 있습니다.';
+  $('reclaim-password').value = ''; $('reclaim-error').textContent = '';
+  m.classList.add('open');
+  setTimeout(() => $('reclaim-password').focus(), 50);
+  return new Promise(res => {
+    const done = (v) => { m.classList.remove('open'); res(v); };
+    $('reclaim-cancel').onclick = () => done(false);
+    const ok = async () => {
+      const pw = $('reclaim-password').value;
+      if (!pw) { $('reclaim-error').textContent = '비밀번호를 입력하세요.'; return; }
+      $('reclaim-ok').disabled = true;
+      try { await claimCharacter(uid, char.id, pw); toast('확인했습니다.'); done(true); }
+      catch (e) { $('reclaim-error').textContent = e?.code === 'permission-denied' ? '비밀번호가 맞지 않습니다.' : errMsg(e); }
+      finally { $('reclaim-ok').disabled = false; }
+    };
+    $('reclaim-ok').onclick = ok;
+    $('reclaim-password').onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) ok(); };
+  });
 }
 export function watchWallets(cb) {
   return onSnapshot(collection(db, 'wallets'), snap => {

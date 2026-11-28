@@ -115,11 +115,11 @@
 <script src="firebase-config.js"></script>
 <script type="module">
 import { doc, getDoc, updateDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db, onReady, $, esc, money, toast, avatarHtml, errMsg, watchCharacters, watchMyCharIds, watchWallets, ensureWallets } from "./common.js?v=2";
+import { db, onReady, $, esc, money, toast, avatarHtml, errMsg, watchCharacters, watchMyCharIds, watchWallets, ensureWallets, askCharPassword } from "./common.js?v=3";
 import { OUTCOMES, DAILY_SPINS, EXTRA_SPIN_COST, ATTEND_REWARD, kstDayKey, effectiveDaily, spinsLeft,
          attendUpdate, buyUpdate, spinUpdate, settleUpdate, SEOMJEON_RULES_VERSION } from "./seomjeon-rules.js?v=2";
 
-let uid = null, allChars = {}, myIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
+let uid = null, allChars = {}, myIds = new Set(), staleIds = new Set(), wallets = {}, walletsLoaded = false, charsLoaded = false;
 let selected = new URLSearchParams(location.search).get('char') || localStorage.getItem('seomjeon.char') || null;
 let busy = false, rankMode = 'balance';
 
@@ -129,7 +129,7 @@ $('odds').innerHTML = OUTCOMES.map(o => `<tr><td class="o-${o.key}"><b>${o.label
 onReady((u) => {
   uid = u;
   watchCharacters(c => { allChars = c; charsLoaded = true; render(); });
-  watchMyCharIds(uid, s => { myIds = s; render(); });
+  watchMyCharIds(uid, (s, st) => { myIds = s; staleIds = st; render(); });
   watchWallets(w => { wallets = w; walletsLoaded = true; render(); settleStale(); });
 });
 setInterval(() => { renderPlay(); settleStale(); }, 30000); // 자정 갱신·방치된 정산 반영
@@ -163,16 +163,29 @@ function renderPlay() {
   if (!c) return;
   $('who-avatar').innerHTML = avatarHtml(c);
   if (!w) { $('balance').textContent = '…'; ['attend-btn', 'buy-btn', 'spin-btn'].forEach(id => $(id).disabled = true); return; }
+  // 다른 기기에서 비밀번호가 바뀐 캐릭터: 다시 확인할 때까지 출석·섬전 불가
+  let banner = $('stale-banner');
+  if (!banner) {
+    banner = document.createElement('div'); banner.id = 'stale-banner';
+    banner.style.cssText = 'margin:0 0 12px;padding:10px 12px;border-radius:10px;border:1px solid var(--warn);color:var(--text);display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap';
+    $('play').prepend(banner);
+  }
+  const stale = staleIds.has(selected);
+  banner.classList.toggle('hidden', !stale);
+  if (stale) {
+    banner.innerHTML = `<span>⚠ ${esc(c.name)}의 비밀번호가 다른 기기에서 바뀌었습니다. 다시 입력해야 출석·섬전을 할 수 있습니다.</span><button class="btn-primary" id="stale-reclaim">비밀번호 입력</button>`;
+    $('stale-reclaim').onclick = () => askCharPassword(uid, c);
+  }
   const e = effectiveDaily(w), left = spinsLeft(w);
   $('balance').textContent = money(w.balance);
   $('spins-left').textContent = `${Math.max(0, left)} / ${DAILY_SPINS + e.extraSpins}`;
   $('day-score').textContent = e.dayScore > 0 ? `+${e.dayScore}` : e.dayScore;
   $('total-score').textContent = w.totalScore > 0 ? `+${w.totalScore}` : w.totalScore;
-  $('attend-btn').disabled = busy || e.attended || !!w.pending;
+  $('attend-btn').disabled = busy || e.attended || !!w.pending || stale;
   $('attend-btn').textContent = e.attended ? '오늘 출석 완료' : `출석 체크 +$${ATTEND_REWARD}`;
-  $('buy-btn').disabled = busy || w.balance < EXTRA_SPIN_COST || !!w.pending;
+  $('buy-btn').disabled = busy || w.balance < EXTRA_SPIN_COST || !!w.pending || stale;
   const bet = parseInt($('bet').value, 10);
-  $('spin-btn').disabled = busy || left <= 0 || w.balance < 1 || !!w.pending;
+  $('spin-btn').disabled = busy || left <= 0 || w.balance < 1 || !!w.pending || stale;
   $('spin-btn').textContent = w.pending ? '결과 정산 중…' : left <= 0 ? '오늘 기회 소진' : w.balance < 1 ? '달러 부족' : '섬전!';
   if (bet > w.balance) $('bet').value = Math.max(1, w.balance);
 }
@@ -190,6 +203,7 @@ async function withBusy(fn) {
 function opError(e) {
   const m = { attended: '오늘은 이미 출석했습니다.', balance: '달러가 부족합니다.', spins: '오늘 섬전 기회를 모두 썼습니다.', bet: '걸 금액을 확인하세요.', pending: '이전 섬전을 정산하는 중입니다.' }[e.message];
   toast(m || (e?.code === 'permission-denied' ? '처리할 수 없습니다. 기기 시계가 맞는지, 캐릭터 비밀번호가 바뀌지 않았는지 확인하세요.' : errMsg(e)));
+  if (!m && e?.code === 'permission-denied' && allChars[selected]) askCharPassword(uid, allChars[selected]);
   if (!m) console.error(e);
 }
 
